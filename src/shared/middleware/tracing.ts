@@ -1,5 +1,5 @@
 import { type Request, type Response, type NextFunction } from "express";
-import { v4 as uuid } from "crypto";
+import { randomUUID as uuid } from "crypto";
 
 export function requestId(req: Request, res: Response, next: NextFunction) {
   const id = (req.headers["x-request-id"] as string) ?? uuid();
