@@ -86,6 +86,26 @@ This order prevents frontend and AI services from drifting into incompatible sha
 | Realtime Transport | WebSockets | Azure Web PubSub / SignalR | Member telemetry and CSO alerts |
 | Orchestration | Docker Compose | Azure Container Apps / AKS | Local service composition |
 
+The frontend technology is intentionally replaceable. React, Vue, Next.js, a native mobile app, or a future CPF-owned interface should all be treated as clients of the same service contracts. The durable product is the backend service chain, event model, AI orchestration, telemetry contract, and CSO operating model.
+
+Frontend clients must depend on:
+
+- REST API contracts
+- WebSocket event contracts
+- stable page keys
+- backend-issued UI profiles
+- shared design tokens where available
+- telemetry SDK behavior
+
+Frontend clients must not own:
+
+- vulnerability inference
+- escalation rules
+- Hermes routing policy
+- identity truth
+- CSO alert state
+- telemetry schema definitions
+
 ---
 
 ## 5. High-Level System Diagram
@@ -407,7 +427,36 @@ The member portal should adapt after login based on the backend-issued `uiProfil
 
 The frontend must not treat adaptation as cosmetic. It should reduce decision load, simplify navigation, and foreground likely tasks.
 
-### 9.2 Layout Modes
+The member portal should also be built as a replaceable client. The first implementation can be React or Next.js, but the system should assume that CPF may later replace the frontend with another framework, a native app, a kiosk interface, or an official portal integration. The backend should not care which client renders the interface as long as the client honors the same contracts.
+
+### 9.2 Frontend Replaceability Rules
+
+Keep the frontend modular through hard boundaries:
+
+- All user/session/profile data comes from API responses, not local assumptions.
+- Adaptive layout is driven by `uiProfile`, `recommendedActions`, and page/task metadata from the backend.
+- All telemetry is emitted through a small client SDK interface.
+- Page identity uses stable `pageKey` values, not route paths or component names.
+- Voice, chat, and assistance actions call orchestration endpoints, not Hermes directly.
+- The frontend can cache display metadata, but backend policy remains authoritative.
+- Shared contracts should be versioned so old and new frontends can coexist during migration.
+
+Recommended client adapter shape:
+
+```typescript
+interface PulseClientAdapter {
+  getCurrentUser(): Promise<UserProfile>;
+  getUiProfile(): Promise<UiProfile>;
+  startSession(): Promise<MemberSession>;
+  sendTelemetry(event: TelemetryEvent): void;
+  openMemberSocket(sessionId: string): RealtimeConnection;
+  requestAssistance(input: AssistanceRequest): Promise<AssistanceResponse>;
+}
+```
+
+Every frontend implementation should provide this adapter. Components should call the adapter rather than hard-coding fetch URLs or WebSocket behavior throughout the UI.
+
+### 9.3 Layout Modes
 
 Standard layout:
 
@@ -432,7 +481,7 @@ Assisted layout:
 - optional CSO callback prompt
 - reduced form complexity
 
-### 9.3 Adaptive UI Components
+### 9.4 Adaptive UI Components
 
 Recommended component boundaries:
 
@@ -456,7 +505,7 @@ AssistanceButton
 
 The frontend should use the `uiProfile.mode` value to select the layout.
 
-### 9.4 Member Portal Page Keys
+### 9.5 Member Portal Page Keys
 
 Every important page must have a stable page key for telemetry and CSO context.
 
@@ -472,6 +521,33 @@ transaction_review
 ```
 
 Do not rely on raw URLs alone. URLs change; page keys should be treated as product-level identifiers.
+
+### 9.6 Design Token Layer
+
+To make replacement easier, put reusable visual decisions in a small design-token layer rather than scattering them through page components.
+
+Recommended tokens:
+
+```text
+color.text.primary
+color.text.muted
+color.surface.default
+color.surface.raised
+color.intent.info
+color.intent.warning
+color.intent.danger
+color.intent.success
+font.size.body
+font.size.control
+font.size.heading
+space.1
+space.2
+space.3
+radius.control
+radius.panel
+```
+
+These tokens should be framework-neutral. A future frontend can reimplement them in CSS variables, native app styles, or CPF's official design system without changing backend behavior.
 
 ---
 
@@ -1470,6 +1546,8 @@ dependency_vulnerability_scan
 
 Create a shared contracts package so frontend and backend use the same schema definitions.
 
+This package is the main protection against frontend lock-in. Treat it as the stable interface between replaceable clients and durable backend services.
+
 Recommended files:
 
 ```text
@@ -1478,9 +1556,20 @@ packages/contracts/src/telemetry.ts
 packages/contracts/src/friction.ts
 packages/contracts/src/ai-payload.ts
 packages/contracts/src/escalation.ts
+packages/contracts/src/client-adapter.ts
+packages/contracts/src/ui-profile.ts
 ```
 
 Use a runtime validation library such as Zod if using TypeScript.
+
+Contract rules:
+
+- Every client-facing contract must include a `schemaVersion`.
+- Breaking changes must create a new version rather than mutating the old one.
+- API Gateway should accept at least one previous telemetry schema version during frontend migration.
+- CSO alert contracts should be more stable than dashboard component props.
+- Backend services should validate contracts at the boundary and store normalized internal records.
+- Frontend clients should import generated or shared types where possible, but the backend must remain correct even if a client is not TypeScript-based.
 
 Example telemetry schema:
 
