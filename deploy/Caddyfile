@@ -1,0 +1,29 @@
+# PULSE reverse proxy — Caddy gives automatic HTTPS (Let's Encrypt).
+# Routes one public subdomain to the two local Node processes:
+#   /api/* and /health/*  -> backend  (Express, 127.0.0.1:3000)
+#   everything else        -> frontend (Next.js, 127.0.0.1:3001)
+#
+# Change the domain below if you use a different subdomain.
+
+pulse.nathanielbuilds.cc {
+	encode zstd gzip
+
+	# API + health checks -> backend gateway
+	@backend path /api/* /health/*
+	handle @backend {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# Everything else -> Next.js frontend (handles WebSocket upgrades automatically)
+	handle {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	# Basic security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

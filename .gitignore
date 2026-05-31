@@ -12,3 +12,6 @@ data/pulse-customers.db
 data/pulse-customers.db-wal
 data/pulse-customers.db-shm
 data/docstore/
+
+# Deploy archives
+*.tar.gz
