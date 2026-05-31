@@ -402,7 +402,11 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | Frontend page routing | Scaffolded | `frontend/src/app/**/page.tsx` (9 pages) |
 | Shared types & errors | Built | `src/shared/types/`, `src/shared/errors.ts`, `src/shared/logger.ts` |
 | Middleware (auth, rate limit, tracing) | Built | `src/shared/middleware/` |
-| Database schemas | Not started | — |
+| Database schemas | Built (vertical slice) | `src/data/sqlite/schema.ts`, `src/data/docstore/` |
+| Customer SQL store (SQLite) | Built — 150+ seeded personas | `src/data/customers/`, `src/scripts/personas.ts` |
+| CPF knowledge store (MongoDB/file) | Built — live-fetched from cpf.gov.sg | `data/cpf-knowledge.json`, `src/data/knowledge/` |
+| AI copilot (z.ai GLM, RAG) | Built | `src/services/ai/`, `src/services/copilot/` |
+| Data & AI Console (frontend) | Built | `frontend/src/app/console/`, `frontend/src/lib/console/` |
 | Domain agent knowledge bases | Not started | `src/agents/domain/*/knowledge/` |
 | Language glossaries | Not started | `src/agents/language/*/glossaries/` |
 | Dialect glossaries | Not started | `src/agents/dialect/*/*/glossaries/` |
@@ -410,6 +414,62 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | CI/CD pipeline | Not started | `.github/workflows/` |
 | Infrastructure as Code | Not started | `infra/` |
 | Tests | Not started | `tests/` |
+
+---
+
+## Live Data Layer & AI Console (Vertical Slice)
+
+A runnable DB → AI → UI slice was added on top of the scaffolding. It shows how the back end stores data, how new records are keyed in, how cases are brought up, and how the AI navigates the data in natural language.
+
+### Two databases (per the architecture doc)
+
+| Store | Tech | Holds | Code |
+| :--- | :--- | :--- | :--- |
+| **Customer / identity** | SQLite (`better-sqlite3`) | Members, CPF accounts (OA/SA/MA/RA), vulnerability markers, correspondence cases + case events | `src/data/sqlite/`, `src/data/customers/` |
+| **CPF knowledge / documents** | MongoDB (Atlas) with **embedded file fallback** | CPF sections, ~31 knowledge documents, terminology — live-fetched from cpf.gov.sg | `src/data/docstore/`, `src/data/knowledge/` |
+
+The document store is an adapter (`DocumentStore`): `DOC_STORE_BACKEND=mongo` uses Atlas (`MONGODB_URI`) and **auto-falls back to the file store** if the cluster is unreachable, so the stack always runs. SQLite = the "Azure SQL" equivalent; Mongo = the "Cosmos DB" equivalent.
+
+### Seed data
+
+`npm run db:seed` generates **~150 representative Singaporean members** (realistic ethnic name mix, ages skewed toward the seniors PULSE serves, dialects, employment, age-appropriate CPF balances, vulnerability markers, support tiers) and **189+ correspondence cases** with timelines. It also loads `data/cpf-knowledge.json` into the document store. Deterministic (seeded RNG) so reseeds are stable. `SEED_COUNT=200 npm run db:seed` to change the count.
+
+### AI copilot (RAG)
+
+- **LLM client** (`src/services/ai/llmClient.ts`): provider-agnostic, OpenAI-compatible. Defaults to **z.ai GLM** (`LLM_BASE_URL=https://api.z.ai/api/coding/paas/v4`, `LLM_MODEL=glm-4.6`). Key in `.env` as `LLM_API_KEY`.
+- **Copilot service** (`src/services/copilot/service.ts`): natural-language question → searches the CPF knowledge store → optionally loads the selected member from SQLite → builds a grounded, data-minimised prompt → returns the answer, **citations** (linking to cpf.gov.sg), a **navigation trace** (the steps the AI took across both DBs), and the member context used. Falls back to a deterministic grounded answer if the LLM is unavailable. Never invents CPF figures; warns about scams; never asks for passwords/OTP.
+
+### Frontend: `/console` (Data & AI Console)
+
+`frontend/src/app/console/page.tsx` — browse/search/filter the customer DB, open a member to see CPF accounts + markers + cases (expandable timelines), **key in a new member** (system derives tier/markers/CPF account), browse the CPF knowledge DB, and chat with the AI copilot (with citations + the live navigation trace). Linked in the top nav as **Data & AI**.
+
+### Backend endpoints
+
+```text
+GET   /api/v1/console/stats                 # dashboard counts (customers, cases, knowledge, AI status)
+GET   /api/v1/console/customers?search&ageBracket&tier
+GET   /api/v1/console/customers/:id
+POST  /api/v1/console/customers             # key in a new member
+GET   /api/v1/console/cases?status&category&priority&search
+GET   /api/v1/console/cases/:id
+POST  /api/v1/console/cases                 # open a case for a member
+POST  /api/v1/console/cases/:id/events      # append to a case
+PATCH /api/v1/console/cases/:id/status
+GET   /api/v1/console/knowledge             # sections + documents + terminology
+GET   /api/v1/console/knowledge/search?q=
+POST  /api/v1/copilot/chat                  # { question, userId?, history? }
+```
+
+### How to run
+
+```bash
+npm install                 # installs better-sqlite3, mongodb, etc.
+# put LLM_API_KEY (and optionally MONGODB_URI) in .env  — see .env.example
+npm run db:seed             # creates SQLite schema, seeds 150 members + CPF knowledge
+npm run dev                 # backend :3000 + frontend :3001  → open http://localhost:3001/console
+```
+
+New env vars (see `.env.example`): `SQLITE_PATH`, `DOC_STORE_BACKEND`, `DOC_STORE_PATH`, `MONGODB_URI`, `MONGODB_DB`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_MS`.
 
 ---
 

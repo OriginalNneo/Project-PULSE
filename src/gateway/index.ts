@@ -14,6 +14,9 @@ import { notificationRoutes } from "../services/notification/routes.js";
 import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
+import { adaptiveLocalRoutes } from "../services/adaptive-local/index.js";
+import { consoleRoutes } from "../services/console/routes.js";
+import { copilotRoutes } from "../services/copilot/routes.js";
 import { agentRoutes } from "../agents/orchestrator/routes.js";
 
 dotenv.config();
@@ -51,6 +54,9 @@ app.use("/api/v1/proxy", requireAuth, proxyRoutes);
 app.use("/api/v1/analytics", requireAuth, analyticsRoutes);
 app.use("/api/v1/billing", requireAuth, billingRoutes);
 
+app.use("/api/v1/adaptive-local", adaptiveLocalRoutes);
+app.use("/api/v1/console", consoleRoutes);
+app.use("/api/v1/copilot", copilotRoutes);
 app.use("/api/v1/agents", agentRoutes);
 
 app.use(errorHandler);

@@ -71,9 +71,15 @@ router.get("/registry", (_req: Request, res: Response<ApiResponse>) => {
 });
 
 router.get("/registry/:name", (req: Request, res: Response<ApiResponse>) => {
-  const agent = registry.get(req.params.name);
+  const name = req.params.name;
+  if (!name) {
+    res.status(400).json({ error: { code: "AGENT.INVALID_NAME", message: "Agent name is required" } });
+    return;
+  }
+
+  const agent = registry.get(name);
   if (!agent) {
-    res.status(404).json({ error: { code: "AGENT.NOT_FOUND", message: `Agent ${req.params.name} not found` } });
+    res.status(404).json({ error: { code: "AGENT.NOT_FOUND", message: `Agent ${name} not found` } });
     return;
   }
   res.json({ data: agent });

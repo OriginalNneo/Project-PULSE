@@ -45,7 +45,7 @@ export function classifyIntent(messages: ConversationMessage[]): DetectedIntent 
   }
 
   const sorted = Object.entries(scores).sort(([, a], [, b]) => b - a);
-  const [bestDomain, bestScore] = sorted[0];
+  const [bestDomain, bestScore] = sorted[0] ?? ["unclear", 0];
 
   if (bestScore === 0) {
     return { domain: "unclear", confidence: 0.1, keywords: [] };

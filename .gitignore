@@ -6,3 +6,9 @@ frontend/.next/
 *.log
 .DS_Store
 coverage/
+
+# Local data artifacts (generated). Keep data/cpf-knowledge.json (the seed source).
+data/pulse-customers.db
+data/pulse-customers.db-wal
+data/pulse-customers.db-shm
+data/docstore/

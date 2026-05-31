@@ -1,4 +1,5 @@
-import type { AgentRegistration, CorrespondenceCategory, Language, Dialect } from "./types.js";
+import type { AgentRegistration } from "../shared/types.js";
+import type { CorrespondenceCategory, Language, Dialect } from "../../shared/types/index.js";
 
 class AgentRegistry {
   private agents = new Map<string, AgentRegistration>();

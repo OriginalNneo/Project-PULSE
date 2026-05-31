@@ -18,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <li><a href="/dashboard">Dashboard</a></li>
               <li><a href="/correspondence">Correspondence</a></li>
               <li><a href="/chat">Ask PULSE</a></li>
+              <li><a href="/console">Data &amp; AI</a></li>
               <li><a href="/proxy">Proxy Access</a></li>
               <li><a href="/settings">Settings</a></li>
             </ul>

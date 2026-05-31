@@ -35,7 +35,17 @@ export async function handleUserMessage(
     };
   }
 
-  const domainAgents = registry.findByDomain(intent.domain as RoutingContext["detectedIntent"]["domain"]);
+  if (intent.domain === "general" || intent.domain === "unclear") {
+    return {
+      content: "I need a little more detail before I can route this safely. Let me connect you with a human agent.",
+      agentName: "orchestrator",
+      confidence: intent.confidence,
+      requiresHumanReview: true,
+      metadata: { reason: "non_domain_intent", domain: intent.domain },
+    };
+  }
+
+  const domainAgents = registry.findByDomain(intent.domain);
   if (domainAgents.length === 0) {
     return {
       content: "I couldn't find a specialist for that topic. Let me connect you with a human agent.",
@@ -47,6 +57,15 @@ export async function handleUserMessage(
   }
 
   const domainAgent = domainAgents[0];
+  if (!domainAgent) {
+    return {
+      content: "I couldn't find a specialist for that topic. Let me connect you with a human agent.",
+      agentName: "orchestrator",
+      confidence: 0,
+      requiresHumanReview: true,
+      metadata: { reason: "no_domain_agent" },
+    };
+  }
 
   const response = await invokeDomainAgent(domainAgent.name, {
     userId: context.userId,
@@ -70,8 +89,24 @@ async function invokeDomainAgent(
 
   let languageContext: LanguageAgentResponse | null = null;
   if (context.detectedIntent.keywords.length > 0 && context.language !== "en") {
+    const firstKeyword = context.detectedIntent.keywords[0];
+    if (!firstKeyword) {
+      return {
+        content: domainContent,
+        agentName,
+        confidence: context.detectedIntent.confidence,
+        requiresHumanReview: context.detectedIntent.confidence < 0.7,
+        metadata: {
+          language: context.language,
+          dialect: context.dialect,
+          domain: context.detectedIntent.domain,
+          languageContext: false,
+        },
+      };
+    }
+
     languageContext = await invokeLanguageOrDialectAgent(
-      context.detectedIntent.keywords[0],
+      firstKeyword,
       context.detectedIntent.domain as "tax" | "health" | "housing" | "employment" | "legal",
       context.language,
       context.dialect,

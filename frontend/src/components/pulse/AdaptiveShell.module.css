@@ -1,0 +1,133 @@
+.shell {
+  --pulse-panel-border: 1px solid var(--pulse-surface-divider);
+  color: var(--pulse-text-primary);
+  display: grid;
+  gap: var(--pulse-space-4);
+  font-size: var(--pulse-font-body);
+}
+
+.headerRow {
+  align-items: flex-start;
+  border-bottom: var(--pulse-panel-border);
+  display: flex;
+  gap: var(--pulse-space-3);
+  justify-content: space-between;
+  padding-bottom: var(--pulse-space-3);
+}
+
+.headerRow h1 {
+  font-size: var(--pulse-font-heading);
+  line-height: 1.2;
+  margin: 0;
+}
+
+.kicker {
+  color: var(--pulse-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 var(--pulse-space-1);
+  text-transform: uppercase;
+}
+
+.modeBadge {
+  background: var(--pulse-surface-selected);
+  border: var(--pulse-panel-border);
+  border-radius: var(--pulse-radius-control);
+  color: var(--pulse-intent-info);
+  font-size: var(--pulse-font-control);
+  font-weight: 700;
+  line-height: 1;
+  padding: var(--pulse-space-2) var(--pulse-space-3);
+  text-transform: capitalize;
+}
+
+.standardNav,
+.actionPanel {
+  display: grid;
+  gap: var(--pulse-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.actionPanel {
+  background: var(--pulse-surface-raised);
+  border: var(--pulse-panel-border);
+  border-radius: var(--pulse-radius-panel);
+  padding: var(--pulse-space-3);
+}
+
+.actionButton {
+  background: var(--pulse-surface-default);
+  border: var(--pulse-panel-border);
+  border-radius: var(--pulse-radius-control);
+  color: var(--pulse-text-primary);
+  display: grid;
+  gap: var(--pulse-space-1);
+  min-height: 64px;
+  padding: var(--pulse-space-3);
+  text-decoration: none;
+}
+
+.actionButton:focus-visible {
+  outline: 3px solid var(--pulse-intent-info);
+  outline-offset: 2px;
+}
+
+.actionButton span {
+  font-size: var(--pulse-font-summary);
+  font-weight: 700;
+}
+
+.actionButton small {
+  color: var(--pulse-text-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.simplified .actionButton,
+.assisted .actionButton {
+  min-height: 76px;
+}
+
+.content {
+  min-width: 0;
+}
+
+.assistanceDock {
+  align-items: center;
+  background: var(--pulse-surface-raised);
+  border: 2px solid var(--pulse-intent-info);
+  border-radius: var(--pulse-radius-panel);
+  bottom: var(--pulse-space-4);
+  display: flex;
+  gap: var(--pulse-space-3);
+  justify-content: space-between;
+  padding: var(--pulse-space-3);
+  position: sticky;
+}
+
+.assistanceDock div {
+  display: grid;
+  gap: var(--pulse-space-1);
+}
+
+.assistanceDock span {
+  color: var(--pulse-text-muted);
+  font-size: 13px;
+}
+
+.assistanceDock button {
+  background: var(--pulse-intent-info);
+  border-radius: var(--pulse-radius-control);
+  font-size: var(--pulse-font-control);
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .headerRow,
+  .assistanceDock {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
