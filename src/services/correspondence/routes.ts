@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { NotFoundError, ValidationError } from "../../shared/errors.js";
-import type { ApiResponse, Correspondence } from "../../shared/types/index.js";
+import type { ApiResponse, PaginatedResponse, Correspondence } from "../../shared/types/index.js";
 import type { AuthenticatedRequest } from "../../shared/types/index.js";
 
 const router = Router();
@@ -22,7 +22,7 @@ const CreateCorrespondenceSchema = z.object({
   language: z.enum(["en", "zh", "ms", "ta"]).default("en"),
 });
 
-router.get("/", async (req: Request, res: Response<ApiResponse<Correspondence[]>>) => {
+router.get("/", async (req: Request, res: Response<PaginatedResponse<Correspondence>>) => {
   const auth = req.auth!;
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) {

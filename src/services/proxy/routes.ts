@@ -17,7 +17,7 @@ router.post("/:principalUserId/proxies", async (req: Request, res: Response<ApiR
 
   const rel: ProxyRelationship = {
     id: crypto.randomUUID(),
-    principalUserId,
+    principalUserId: principalUserId!,
     proxyUserId: body.proxyUserId ?? "",
     relationshipType: body.relationshipType ?? "family",
     grantedAt: new Date().toISOString(),

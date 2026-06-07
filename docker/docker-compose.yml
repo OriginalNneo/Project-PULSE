@@ -1,0 +1,76 @@
+version: "3.9"
+
+networks:
+  agent-net:
+    driver: bridge
+  data-net:
+    driver: bridge
+    internal: true      # db-proxy → MongoDB only, no internet escape
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "3000:3000"
+    networks: [agent-net]
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - PYTHON_BRIDGE_URL=http://py-bridge:5001
+      - TRANSLATOR_URL=http://translator:5002
+      - DB_PROXY_URL=http://db-proxy:4000
+      - CORS_ORIGIN=http://localhost:3001
+      - HERMES_BASE_URL=${HERMES_BASE_URL}
+      - HERMES_MODEL=${HERMES_MODEL}
+      - HERMES_API_KEY=${HERMES_API_KEY}
+      - DB_PROXY_SECRET=${DB_PROXY_SECRET}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
+    depends_on: [py-bridge, translator, db-proxy]
+    volumes: 
+      - ../src:/app/src
+
+  py-bridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+    networks: [agent-net]
+    environment:
+      - PORT=5001
+      - WHISPER_MODEL=openai/whisper-large-v3
+      - MMS_MODEL=facebook/mms-300m
+      - MODEL_CACHE_DIR=/app/models
+    volumes:
+      - model-cache:/app/models
+
+  translator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.translator
+    ports:
+      - "5002:5002"
+    networks: [agent-net]
+    environment:
+      - PORT=5002
+      - SEAMLESS_MODEL=facebook/seamless-m4t-v2-large
+      - FASTTEXT_MODEL_PATH=/app/models/lid.176.bin
+      - MODEL_CACHE_DIR=/app/models
+    volumes:
+      - model-cache:/app/models
+
+  db-proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.db-proxy
+    networks: [agent-net, data-net]
+    environment:
+      - PORT=4000
+      - MONGO_URI_USERS=${MONGO_URI_USERS}
+      - MONGO_URI_TOOLS=${MONGO_URI_TOOLS}
+      - DB_PROXY_SECRET=${DB_PROXY_SECRET}
+
+volumes:
+  model-cache:

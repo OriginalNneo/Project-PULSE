@@ -1,8 +1,13 @@
+import http from "http";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import { attachWebSocket } from "./ws.js";
+import { startQueueRefreshTimer } from "../dashboard/queue.js";
+import { webhookRoutes } from "./webhook.js";
+import { dashboardRoutes } from "./dashboard.js";
 import { requireAuth, rateLimiter, errorHandler, requestId, attachTraceContext } from "../shared/middleware/index.js";
 import { createServiceLogger } from "../shared/logger.js";
 import { correspondenceRoutes } from "../services/correspondence/routes.js";
@@ -14,7 +19,12 @@ import { notificationRoutes } from "../services/notification/routes.js";
 import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
-import { agentRoutes } from "../agents/orchestrator/routes.js";
+import { runTranscriberAgent } from "../agents/transcriber-agent/agent.js";
+import { runQueryAgent } from "../agents/query/agent.js";
+import { z } from "zod";
+import { ValidationError } from "../shared/errors.js";
+import type { ApiResponse } from "../shared/types/index.js";
+import type { Request, Response } from "express";
 
 dotenv.config();
 
@@ -28,15 +38,57 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // required for Twilio form-encoded webhooks
 app.use(requestId);
 app.use(attachTraceContext);
+
+app.get("/", (_req, res) => {
+  res.json({
+    name: "PULSE Gateway",
+    version: "0.1.0",
+    status: "running",
+    endpoints: {
+      health: { live: "GET /health/live", ready: "GET /health/ready" },
+      agents: { query: "POST /query", transcribe: "POST /transcribe", translate: "POST /translate", detect: "POST /detect" },
+      api: {
+        correspondence: "GET|POST /api/v1/correspondence",
+        vulnerability:  "GET|POST /api/v1/vulnerability",
+        orchestration:  "GET|POST /api/v1/orchestration",
+        adaptation:     "GET|POST /api/v1/adaptation",
+        delivery:       "GET|POST /api/v1/delivery",
+        notification:   "GET|POST /api/v1/notification",
+        proxy:          "GET|POST /api/v1/proxy",
+        analytics:      "GET|POST /api/v1/analytics",
+        billing:        "GET|POST /api/v1/billing",
+      },
+      dashboard: "GET|POST /dashboard/*",
+      webhook:   "POST /webhook",
+    },
+  });
+});
 
 app.get("/health/live", (_req, res) => {
   res.json({ status: "alive", timestamp: new Date().toISOString() });
 });
 
-app.get("/health/ready", (_req, res) => {
-  res.json({ status: "ready", timestamp: new Date().toISOString() });
+app.get("/health/ready", async (_req, res) => {
+  const containers = [
+    { name: "py-bridge",  url: `${process.env.PYTHON_BRIDGE_URL ?? "http://py-bridge:5001"}/health` },
+    { name: "translator", url: `${process.env.TRANSLATOR_URL ?? "http://translator:5002"}/health` },
+    { name: "db-proxy",   url: `${process.env.DB_PROXY_URL ?? "http://db-proxy:4000"}/health` },
+  ];
+  const checks = await Promise.all(
+    containers.map(async ({ name, url }) => {
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        return { name, ok: r.ok };
+      } catch {
+        return { name, ok: false };
+      }
+    }),
+  );
+  const allOk = checks.every((c) => c.ok);
+  res.status(allOk ? 200 : 503).json({ status: allOk ? "ready" : "degraded", containers: checks, timestamp: new Date().toISOString() });
 });
 
 app.use(rateLimiter);
@@ -51,14 +103,106 @@ app.use("/api/v1/proxy", requireAuth, proxyRoutes);
 app.use("/api/v1/analytics", requireAuth, analyticsRoutes);
 app.use("/api/v1/billing", requireAuth, billingRoutes);
 
-app.use("/api/v1/agents", agentRoutes);
+// WhatsApp inbound webhook — unauthenticated (Twilio signs requests instead)
+app.use("/webhook", webhookRoutes);
+
+// CCU officer dashboard REST endpoints
+app.use("/dashboard", requireAuth, dashboardRoutes);
+
+// ── Transcriber agent: voice → text, dialect normalisation, translation ────────
+const DialectEnum = z.enum([
+  "zh-hok", "zh-can", "zh-teo", "zh-hak", "zh-hai",
+  "ms-bms", "ms-joh", "ms-boy", "ms-jav",
+  "ta-sin", "ta-spo", "ml", "pa", "hi",
+]);
+const LanguageEnum = z.enum(["en", "zh", "ms", "ta"]);
+
+const ResponseFormatEnum = z.enum(["text", "audio", "both"]);
+
+const TranscribeSchema = z.object({
+  audio: z.string().min(1),
+  mimeType: z.string().default("audio/wav"),
+  dialect: DialectEnum.optional(),
+  language: LanguageEnum.optional(),
+  targetLanguage: LanguageEnum.optional(),   // falls back to user saved prefs, then "en"
+  responseFormat: ResponseFormatEnum.default("text"),
+});
+
+const TextInputSchema = z.object({
+  text: z.string().min(1).max(5000),
+  dialect: DialectEnum.optional(),
+  language: LanguageEnum.optional(),
+  targetLanguage: LanguageEnum.optional(),
+  responseFormat: ResponseFormatEnum.default("text"),
+});
+
+app.post("/transcribe", async (req: Request, res: Response<ApiResponse>) => {
+  const parsed = TranscribeSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
+  const auth = req.auth;
+  const result = await runTranscriberAgent(
+    { mode: "voice", audioBase64: parsed.data.audio, ...parsed.data },
+    { userId: auth?.userId ?? "anonymous", tenantId: auth?.tenantId ?? "default", vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service" },
+  );
+  res.json({ data: result });
+});
+
+app.post("/translate", async (req: Request, res: Response<ApiResponse>) => {
+  const parsed = TextInputSchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
+  const auth = req.auth;
+  const result = await runTranscriberAgent(
+    { mode: "text", ...parsed.data },
+    { userId: auth?.userId ?? "anonymous", tenantId: auth?.tenantId ?? "default", vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service" },
+  );
+  res.json({ data: result });
+});
+
+app.post("/detect", async (req: Request, res: Response<ApiResponse>) => {
+  const parsed = z.object({ text: z.string().min(1).max(5000) }).safeParse(req.body);
+  if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
+  const result = await runTranscriberAgent(
+    { mode: "text", text: parsed.data.text, targetLanguage: "en", detectOnly: true },
+    { userId: "anonymous", tenantId: "default", vulnerabilityTier: "self-service" },
+  );
+  res.json({ data: { detectedLanguage: result.detectedLanguage, confidence: result.confidence } });
+});
+
+// ── Query agent: CPF navigation and knowledge lookup ───────────────────────────
+const QuerySchema = z.object({
+  message: z.string().min(1).max(5000),
+  conversationHistory: z.array(z.object({ role: z.enum(["user", "agent"]), content: z.string(), timestamp: z.string().optional() })).default([]),
+  language: LanguageEnum.optional(),
+});
+
+app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
+  const parsed = QuerySchema.safeParse(req.body);
+  if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
+  const auth = req.auth;
+  const { message, conversationHistory, language } = parsed.data;
+  const messages = [
+    ...conversationHistory.map((m) => ({ ...m, timestamp: m.timestamp ?? new Date().toISOString() })),
+    { role: "user" as const, content: message, timestamp: new Date().toISOString() },
+  ];
+  const result = await runQueryAgent(messages, {
+    userId: auth?.userId ?? "anonymous",
+    tenantId: auth?.tenantId ?? "default",
+    vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
+    language,
+  });
+  res.json({ data: result });
+});
 
 app.use(errorHandler);
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
+const server = http.createServer(app);
 
-app.listen(PORT, () => {
+attachWebSocket(server);
+startQueueRefreshTimer();
+
+server.listen(PORT, () => {
   log.info({ port: PORT, env: process.env.NODE_ENV }, "PULSE Gateway started");
 });
 
-export { app };
+export { app, server };

@@ -10,7 +10,7 @@ const store = new Map<string, RateLimitEntry>();
 
 const WINDOW_MS = 60_000;
 
-const LIMITS: Record<string, number> = {
+const LIMITS: Record<"anonymous" | "authenticated" | "service" | "admin", number> = {
   anonymous: 10,
   authenticated: 100,
   service: 1000,
