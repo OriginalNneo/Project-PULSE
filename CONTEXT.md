@@ -407,13 +407,16 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | CPF knowledge store (MongoDB/file) | Built — live-fetched from cpf.gov.sg | `data/cpf-knowledge.json`, `src/data/knowledge/` |
 | AI copilot (z.ai GLM, RAG) | Built | `src/services/ai/`, `src/services/copilot/` |
 | Data & AI Console (frontend) | Built | `frontend/src/app/console/`, `frontend/src/lib/console/` |
+| Adaptive-local service | Built | `src/services/adaptive-local/` (auth, friction, sessions, telemetry, CSO alerts, Hermes stub) |
+| Shared contracts | Built | `src/shared/contracts/` (AI payload, escalation, friction, identity, telemetry, UI profile, validation) |
+| Testing harness | Built | `src/testing/pulseTestHarness.ts`, `tests/` (contracts, CSO alerts, telemetry, Hermes boundary, UI profile) |
+| Deploy kit | Built | `deploy/` (Caddyfile, ecosystem.config.cjs, setup-vps.sh), `DEPLOY.md` |
 | Domain agent knowledge bases | Not started | `src/agents/domain/*/knowledge/` |
 | Language glossaries | Not started | `src/agents/language/*/glossaries/` |
 | Dialect glossaries | Not started | `src/agents/dialect/*/*/glossaries/` |
 | External adapters (Singpass, Twilio, SingPost) | Not started | `src/adapters/` |
 | CI/CD pipeline | Not started | `.github/workflows/` |
 | Infrastructure as Code | Not started | `infra/` |
-| Tests | Not started | `tests/` |
 
 ---
 
@@ -480,3 +483,27 @@ New env vars (see `.env.example`): `SQLITE_PATH`, `DOC_STORE_BACKEND`, `DOC_STOR
 | [README.md](./README.md) | Full project documentation — pillars, architecture, setup, contributing |
 | [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md) | Complete AI agent system specification — agents, communication, OpenClaw integration, safety |
 | [CONTEXT.md](./CONTEXT.md) | This file — consolidated quick reference |
+| [DEPLOY.md](./DEPLOY.md) | VPS deployment guide — Caddy reverse proxy, PM2 ecosystem, setup script |
+| [adaptive-service-architecture-documentation.md](./adaptive-service-architecture-documentation.md) | Adaptive service architecture deep-dive — friction, telemetry, CSO alerts, Hermes integration |
+
+---
+
+## Hermes Coding Agent
+
+Hermes is a coding agent (NousResearch/hermes-agent) running on this VPS, accessible via Telegram (@SDS_Pulse_Bot). Its sole purpose is to build, edit, and modify code within this project directory.
+
+- **Install location**: `/nat/hermes-agent/` (installed directly, not Docker)
+- **Config home**: `~/.hermes/` (SOUL.md, config.yaml, .env, gateway logs)
+- **Scope**: Only `/nat/Project-PULSE/` — reads, writes, builds, tests within this directory
+- **Access**: Telegram bot (@SDS_Pulse_Bot), gateway runs as systemd user service
+- **LLM**: Z.AI GLM-4.5-flash via `https://api.z.ai/api/coding/paas/v4`
+- **SOUL.md**: Defines Hermes as a coding agent that builds PULSE features end-to-end and escalates to the developer on ambiguity/blockers
+
+### Gateway Management
+
+```bash
+hermes gateway status                # check if running
+hermes gateway restart              # restart after config changes
+tail -f ~/.hermes/logs/gateway.log  # view live logs
+hermes gateway run                  # run in foreground (for debugging)
+```
