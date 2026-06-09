@@ -476,6 +476,65 @@ New env vars (see `.env.example`): `SQLITE_PATH`, `DOC_STORE_BACKEND`, `DOC_STOR
 
 ---
 
+## Integrated Chatbot, Messaging Escalation & CCU Officer Console
+
+The "Open Integrated ChatBot" node from the system diagram, built as three swappable, modular subsystems. Citizens chat on the CPF website, CPF app, or a messaging channel; SIMPLE requests are answered inline (grounded in MongoDB CPF knowledge); COMPLEX/private/unique requests escalate to a Customer Correspondence Unit (CCU) officer who replies from a local dashboard, delivered back over the citizen's channel.
+
+### Swappable subsystems (config-driven, no code change to switch)
+
+| Subsystem | Interface | Active now | Swap to | Flag |
+| :--- | :--- | :--- | :--- | :--- |
+| **AI provider** | `AiProvider` (`src/services/ai/providers/`) | **z.ai GLM** (real, MongoDB-grounded) | **Hermes.AI** (placeholder until VPS endpoint wired) | `AI_PROVIDER=zai\|hermes` |
+| **Messaging channel** | `MessagingChannel` (`src/services/messaging/`) | **Telegram** (real, long-polling) | **WhatsApp** (Cloud API stub) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
+
+All config lives in one typed loader: `src/config/integration.ts` (reads `.env`).
+
+### Flow
+
+```
+Citizen (web / app / Telegram)
+  → POST /api/v1/chatbot/message  →  ChatbotService
+      → retrieve CPF knowledge (MongoDB)  →  analyse (emotion / confidence / urgency / complexity)
+      → SIMPLE   → AiProvider answers (z.ai GLM) — deterministic grounded fallback if no key
+      → COMPLEX  → EscalationService → persist to MongoDB + notify officer channel
+                     → CCU Officer Console (/officer) → officer reply → MessagingChannel → citizen
+```
+
+The chatbot's per-turn analysis (emotion, confidence %, urgency) drives the CPF Queries Dashboard cards. Conversation + AI context window persist in the document store (`chat_sessions`, `cso_escalations` collections), so the officer sees full context on pickup.
+
+### New collections (document store)
+
+`chat_sessions` — chatbot conversations + context window. `cso_escalations` — escalations surfaced to the CCU.
+
+### Backend endpoints
+
+```text
+# Integrated chatbot (web / app / messaging all enter here)
+GET   /api/v1/chatbot/health                 # active AI provider + messaging channel + readiness
+POST  /api/v1/chatbot/message                # { message, channel?, sessionId?, memberId?, ... }
+GET   /api/v1/chatbot/session/:sessionId
+
+# Messaging channel (Telegram polls automatically; webhook for prod/WhatsApp)
+GET   /api/v1/messaging/health
+GET   /api/v1/messaging/webhook              # WhatsApp verification handshake
+POST  /api/v1/messaging/webhook              # inbound push (prod)
+
+# CCU officer console (the local dashboard)
+GET   /api/v1/officer/dashboard              # stats + open/inactive chats + incoming queries rail
+GET   /api/v1/officer/conversation/:sessionId
+POST  /api/v1/officer/conversation/:sessionId/reply    # { officer, message } → delivered to citizen
+POST  /api/v1/officer/conversation/:sessionId/close
+POST  /api/v1/officer/escalations/:escalationId/acknowledge
+```
+
+### Frontend: `/officer` (CPF Queries Dashboard)
+
+`frontend/src/app/officer/page.tsx` — the CCU officer console: live stat cards (open chats, incoming, avg response, resolved today), Open Chats grid (emotion chip + confidence bar + urgency dot), Incoming Queries rail, Inactive Chats, and a conversation drawer with the AI context window + a reply box that sends back over Telegram/WhatsApp. Polls every 4s. Linked in the top nav as **CCU Dashboard**.
+
+New env vars: `AI_PROVIDER`, `HERMES_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`, `MESSAGING_CHANNEL`, `TELEGRAM_MODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OFFICER_CHAT_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`.
+
+---
+
 ## Reference Documents
 
 | Document | Purpose |

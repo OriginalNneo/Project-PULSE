@@ -77,10 +77,14 @@ export async function chatComplete(messages: ChatMessage[], opts: ChatOptions = 
     }
 
     const data = JSON.parse(text) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string; reasoning_content?: string }; finish_reason?: string }>;
       usage?: Record<string, unknown>;
     };
-    const content = data.choices?.[0]?.message?.content?.trim();
+    const choice = data.choices?.[0];
+    // Reasoning models (e.g. glm-5-turbo) may stream their thinking into
+    // `reasoning_content` and leave `content` empty when the token budget runs
+    // out mid-thought. Prefer the real answer, fall back to reasoning text.
+    const content = (choice?.message?.content?.trim() || choice?.message?.reasoning_content?.trim());
     if (!content) {
       throw new Error("LLM returned an empty response");
     }

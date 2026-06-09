@@ -32,6 +32,12 @@ export function createFileStore(): DocumentStore {
     fs.writeFileSync(file(collection), JSON.stringify(docs, null, 2), "utf8");
   }
 
+  function matches(doc: unknown, filter: Record<string, unknown>): boolean {
+    if (typeof doc !== "object" || doc === null) return false;
+    const record = doc as Record<string, unknown>;
+    return Object.entries(filter).every(([key, value]) => record[key] === value);
+  }
+
   return {
     backend: "file",
     async list<T>(collection: string): Promise<T[]> {
@@ -48,6 +54,21 @@ export function createFileStore(): DocumentStore {
     },
     async count(collection: string): Promise<number> {
       return read(collection).length;
+    },
+    async findOne<T>(collection: string, filter: Record<string, unknown>): Promise<T | null> {
+      const docs = read<T>(collection);
+      return docs.find((doc) => matches(doc, filter)) ?? null;
+    },
+    async upsert<T>(collection: string, filter: Record<string, unknown>, doc: T): Promise<T> {
+      const docs = read<T>(collection);
+      const index = docs.findIndex((existing) => matches(existing, filter));
+      if (index >= 0) {
+        docs[index] = doc;
+      } else {
+        docs.push(doc);
+      }
+      write(collection, docs);
+      return doc;
     },
     async close(): Promise<void> {
       /* nothing to close */

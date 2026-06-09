@@ -18,6 +18,11 @@ import { adaptiveLocalRoutes } from "../services/adaptive-local/index.js";
 import { consoleRoutes } from "../services/console/routes.js";
 import { copilotRoutes } from "../services/copilot/routes.js";
 import { agentRoutes } from "../agents/orchestrator/routes.js";
+import { chatbotRoutes } from "../services/chatbot/routes.js";
+import { messagingRoutes } from "../services/messaging/routes.js";
+import { officerRoutes } from "../services/officer/routes.js";
+import { startMessaging } from "../services/messaging/index.js";
+import { handleInboundMessage } from "../services/messaging/inbound.js";
 
 dotenv.config();
 
@@ -59,12 +64,24 @@ app.use("/api/v1/console", consoleRoutes);
 app.use("/api/v1/copilot", copilotRoutes);
 app.use("/api/v1/agents", agentRoutes);
 
+// Integrated chatbot + escalation messaging + CCU officer console.
+app.use("/api/v1/chatbot", chatbotRoutes);
+app.use("/api/v1/messaging", messagingRoutes);
+app.use("/api/v1/officer", officerRoutes);
+
 app.use(errorHandler);
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
 app.listen(PORT, () => {
   log.info({ port: PORT, env: process.env.NODE_ENV }, "PULSE Gateway started");
+
+  // Start the active messaging channel (Telegram long-polling in dev). This lets
+  // citizens chat with the integrated bot over Telegram and receive officer
+  // replies on the same channel. Failures here never take the gateway down.
+  startMessaging(handleInboundMessage).catch((error) => {
+    log.error({ err: (error as Error).message }, "Failed to start messaging channel");
+  });
 });
 
 export { app };

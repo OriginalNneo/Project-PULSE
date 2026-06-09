@@ -15,6 +15,13 @@ export interface DocumentStore {
   replaceAll<T>(collection: string, docs: T[]): Promise<number>;
   insert<T>(collection: string, doc: T): Promise<void>;
   count(collection: string): Promise<number>;
+  /** Find a single document by an exact-match filter (e.g. { sessionId }). */
+  findOne<T>(collection: string, filter: Record<string, unknown>): Promise<T | null>;
+  /**
+   * Upsert: replace the document matching `filter` with `doc`, or insert it if
+   * none matches. Returns the stored document. Used for mutable session state.
+   */
+  upsert<T>(collection: string, filter: Record<string, unknown>, doc: T): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -22,6 +29,10 @@ export const COLLECTIONS = {
   knowledge: "cpf_knowledge",
   sections: "cpf_sections",
   terminology: "cpf_terminology",
+  /** Integrated-chatbot conversations + their AI context window. */
+  chatSessions: "chat_sessions",
+  /** Escalations surfaced to the Customer Correspondence Unit officers. */
+  escalations: "cso_escalations",
 } as const;
 
 export interface CpfSection {
