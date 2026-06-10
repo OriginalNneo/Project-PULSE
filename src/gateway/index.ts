@@ -19,8 +19,7 @@ import { notificationRoutes } from "../services/notification/routes.js";
 import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
-import { runTranscriberAgent } from "../agents/transcriber-agent/agent.js";
-import { runQueryAgent } from "../agents/query/agent.js";
+import { runMainAgent } from "../agents/main/agent.js";
 import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
 import type { ApiResponse } from "../shared/types/index.js";
@@ -38,7 +37,7 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json());
-app.use(express.urlencoded({ extended: false })); // required for Twilio form-encoded webhooks
+app.use(express.urlencoded({ extended: false }));
 app.use(requestId);
 app.use(attachTraceContext);
 
@@ -72,13 +71,12 @@ app.get("/health/live", (_req, res) => {
 });
 
 app.get("/health/ready", async (_req, res) => {
-  const containers = [
-    { name: "py-bridge",  url: `${process.env.PYTHON_BRIDGE_URL ?? "http://py-bridge:5001"}/health` },
-    { name: "translator", url: `${process.env.TRANSLATOR_URL ?? "http://translator:5002"}/health` },
-    { name: "db-proxy",   url: `${process.env.DB_PROXY_URL ?? "http://db-proxy:4000"}/health` },
+  const services = [
+    { name: "py-transcriber", url: `${process.env.PYTHON_BRIDGE_URL ?? "http://localhost:5001"}/health` },
+    { name: "py-translator",  url: `${process.env.TRANSLATOR_URL  ?? "http://localhost:5002"}/health` },
   ];
   const checks = await Promise.all(
-    containers.map(async ({ name, url }) => {
+    services.map(async ({ name, url }) => {
       try {
         const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
         return { name, ok: r.ok };
@@ -88,20 +86,24 @@ app.get("/health/ready", async (_req, res) => {
     }),
   );
   const allOk = checks.every((c) => c.ok);
-  res.status(allOk ? 200 : 503).json({ status: allOk ? "ready" : "degraded", containers: checks, timestamp: new Date().toISOString() });
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? "ready" : "degraded",
+    services: checks,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use(rateLimiter);
 
 app.use("/api/v1/correspondence", requireAuth, correspondenceRoutes);
-app.use("/api/v1/vulnerability", requireAuth, vulnerabilityRoutes);
-app.use("/api/v1/orchestration", requireAuth, orchestrationRoutes);
-app.use("/api/v1/adaptation", requireAuth, adaptationRoutes);
-app.use("/api/v1/delivery", requireAuth, deliveryRoutes);
-app.use("/api/v1/notification", requireAuth, notificationRoutes);
-app.use("/api/v1/proxy", requireAuth, proxyRoutes);
-app.use("/api/v1/analytics", requireAuth, analyticsRoutes);
-app.use("/api/v1/billing", requireAuth, billingRoutes);
+app.use("/api/v1/vulnerability",  requireAuth, vulnerabilityRoutes);
+app.use("/api/v1/orchestration",  requireAuth, orchestrationRoutes);
+app.use("/api/v1/adaptation",     requireAuth, adaptationRoutes);
+app.use("/api/v1/delivery",       requireAuth, deliveryRoutes);
+app.use("/api/v1/notification",   requireAuth, notificationRoutes);
+app.use("/api/v1/proxy",          requireAuth, proxyRoutes);
+app.use("/api/v1/analytics",      requireAuth, analyticsRoutes);
+app.use("/api/v1/billing",        requireAuth, billingRoutes);
 
 // WhatsApp inbound webhook — unauthenticated (Twilio signs requests instead)
 app.use("/webhook", webhookRoutes);
@@ -109,27 +111,19 @@ app.use("/webhook", webhookRoutes);
 // CCU officer dashboard REST endpoints
 app.use("/dashboard", requireAuth, dashboardRoutes);
 
-// ── Transcriber agent: voice → text, dialect normalisation, translation ────────
+// ── Shared schema building blocks ─────────────────────────────────────────────
 const DialectEnum = z.enum([
   "zh-hok", "zh-can", "zh-teo", "zh-hak", "zh-hai",
   "ms-bms", "ms-joh", "ms-boy", "ms-jav",
   "ta-sin", "ta-spo", "ml", "pa", "hi",
 ]);
 const LanguageEnum = z.enum(["en", "zh", "ms", "ta"]);
-
 const ResponseFormatEnum = z.enum(["text", "audio", "both"]);
 
+// ── POST /transcribe — voice → text (main agent → transcriber + translator subagents) ──
 const TranscribeSchema = z.object({
   audio: z.string().min(1),
   mimeType: z.string().default("audio/wav"),
-  dialect: DialectEnum.optional(),
-  language: LanguageEnum.optional(),
-  targetLanguage: LanguageEnum.optional(),   // falls back to user saved prefs, then "en"
-  responseFormat: ResponseFormatEnum.default("text"),
-});
-
-const TextInputSchema = z.object({
-  text: z.string().min(1).max(5000),
   dialect: DialectEnum.optional(),
   language: LanguageEnum.optional(),
   targetLanguage: LanguageEnum.optional(),
@@ -140,38 +134,82 @@ app.post("/transcribe", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = TranscribeSchema.safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
   const auth = req.auth;
-  const result = await runTranscriberAgent(
-    { mode: "voice", audioBase64: parsed.data.audio, ...parsed.data },
-    { userId: auth?.userId ?? "anonymous", tenantId: auth?.tenantId ?? "default", vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service" },
+  const result = await runMainAgent(
+    {
+      type: "transcribe",
+      audioBase64: parsed.data.audio,
+      mimeType: parsed.data.mimeType,
+      dialect: parsed.data.dialect,
+      language: parsed.data.language,
+      targetLanguage: parsed.data.targetLanguage,
+      responseFormat: parsed.data.responseFormat,
+    },
+    {
+      userId: auth?.userId ?? "anonymous",
+      tenantId: auth?.tenantId ?? "default",
+      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
+    },
   );
   res.json({ data: result });
+});
+
+// ── POST /translate — text → translated text (main agent → translator subagent) ──
+const TextInputSchema = z.object({
+  text: z.string().min(1).max(5000),
+  dialect: DialectEnum.optional(),
+  language: LanguageEnum.optional(),
+  targetLanguage: LanguageEnum.optional(),
+  responseFormat: ResponseFormatEnum.default("text"),
 });
 
 app.post("/translate", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = TextInputSchema.safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
   const auth = req.auth;
-  const result = await runTranscriberAgent(
-    { mode: "text", ...parsed.data },
-    { userId: auth?.userId ?? "anonymous", tenantId: auth?.tenantId ?? "default", vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service" },
+  const result = await runMainAgent(
+    {
+      type: "translate",
+      text: parsed.data.text,
+      dialect: parsed.data.dialect,
+      language: parsed.data.language,
+      targetLanguage: parsed.data.targetLanguage,
+      responseFormat: parsed.data.responseFormat,
+    },
+    {
+      userId: auth?.userId ?? "anonymous",
+      tenantId: auth?.tenantId ?? "default",
+      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
+    },
   );
   res.json({ data: result });
 });
 
+// ── POST /detect — text → detected language (main agent → translator subagent, detect-only) ──
 app.post("/detect", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = z.object({ text: z.string().min(1).max(5000) }).safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
-  const result = await runTranscriberAgent(
-    { mode: "text", text: parsed.data.text, targetLanguage: "en", detectOnly: true },
-    { userId: "anonymous", tenantId: "default", vulnerabilityTier: "self-service" },
+  const auth = req.auth;
+  const result = await runMainAgent(
+    { type: "detect", text: parsed.data.text },
+    {
+      userId: auth?.userId ?? "anonymous",
+      tenantId: auth?.tenantId ?? "default",
+      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
+    },
   );
-  res.json({ data: { detectedLanguage: result.detectedLanguage, confidence: result.confidence } });
+  res.json({ data: { detectedLanguage: result.detectedLanguage } });
 });
 
-// ── Query agent: CPF navigation and knowledge lookup ───────────────────────────
+// ── POST /query — CPF knowledge lookup (main agent → query subagent) ──────────
 const QuerySchema = z.object({
   message: z.string().min(1).max(5000),
-  conversationHistory: z.array(z.object({ role: z.enum(["user", "agent"]), content: z.string(), timestamp: z.string().optional() })).default([]),
+  conversationHistory: z.array(
+    z.object({
+      role: z.enum(["user", "agent"]),
+      content: z.string(),
+      timestamp: z.string().optional(),
+    }),
+  ).default([]),
   language: LanguageEnum.optional(),
 });
 
@@ -184,12 +222,14 @@ app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
     ...conversationHistory.map((m) => ({ ...m, timestamp: m.timestamp ?? new Date().toISOString() })),
     { role: "user" as const, content: message, timestamp: new Date().toISOString() },
   ];
-  const result = await runQueryAgent(messages, {
-    userId: auth?.userId ?? "anonymous",
-    tenantId: auth?.tenantId ?? "default",
-    vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
-    language,
-  });
+  const result = await runMainAgent(
+    { type: "query", messages, language },
+    {
+      userId: auth?.userId ?? "anonymous",
+      tenantId: auth?.tenantId ?? "default",
+      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
+    },
+  );
   res.json({ data: result });
 });
 
