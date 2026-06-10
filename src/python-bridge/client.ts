@@ -2,8 +2,8 @@ import { createServiceLogger } from "../shared/logger.js";
 import { ExternalServiceError } from "../shared/errors.js";
 
 const log = createServiceLogger("py-bridge");
-const WHISPER_BASE = process.env.PYTHON_BRIDGE_URL ?? "http://py-bridge:5001";
-const TRANSLATOR_BASE = process.env.TRANSLATOR_URL ?? "http://translator:5002";
+const WHISPER_BASE = process.env.PYTHON_BRIDGE_URL ?? "http://localhost:5001";
+const TRANSLATOR_BASE = process.env.TRANSLATOR_URL ?? "http://localhost:5002";
 
 export interface TranscribeResult {
   text: string;

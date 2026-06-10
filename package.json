@@ -4,9 +4,12 @@
   "description": "PULSE — People-centric Framework for Correspondence",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run py:transcriber\" \"npm run py:translator\"",
     "dev:backend": "tsx watch src/gateway/index.ts",
     "dev:frontend": "cd frontend && npm run dev",
+    "py:transcriber": "cd src/python-bridge && uvicorn transcriber:app --port 5001 --reload",
+    "py:translator": "cd src/python-bridge && uvicorn translator:app --port 5002 --reload",
+    "py": "concurrently \"npm run py:transcriber\" \"npm run py:translator\"",
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "tsc -p tsconfig.json",
     "build:frontend": "cd frontend && npm run build",

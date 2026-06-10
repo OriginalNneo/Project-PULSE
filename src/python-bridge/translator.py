@@ -27,7 +27,7 @@ LANG_MAP: dict[str, str] = {
 # ── fastText (language identification) ───────────────────────────────────────
 import fasttext
 
-FASTTEXT_MODEL_PATH = os.getenv("FASTTEXT_MODEL_PATH", "/app/models/lid.176.bin")
+FASTTEXT_MODEL_PATH = os.getenv("FASTTEXT_MODEL_PATH", "./models/lid.176.bin")
 ft_model = fasttext.load_model(FASTTEXT_MODEL_PATH) if os.path.exists(FASTTEXT_MODEL_PATH) else None
 
 # ── edge-tts (neural TTS) ─────────────────────────────────────────────────────

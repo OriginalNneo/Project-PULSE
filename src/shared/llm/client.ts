@@ -1,3 +1,6 @@
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { createServiceLogger } from "../logger.js";
 
 const log = createServiceLogger("hermes");
@@ -5,6 +8,17 @@ const log = createServiceLogger("hermes");
 const HERMES_BASE_URL = process.env.HERMES_BASE_URL ?? "http://localhost:8000";
 export const HERMES_MODEL = process.env.HERMES_MODEL ?? "NousResearch/Hermes-3-Llama-3.1-8B-Instruct";
 const HERMES_API_KEY = process.env.HERMES_API_KEY ?? "";
+
+// Load soul.md once at startup — injected as a preamble into every agent system prompt
+const SOUL_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../soul.md");
+const SOUL_PREAMBLE = (() => {
+  try {
+    return readFileSync(SOUL_PATH, "utf-8");
+  } catch {
+    log.warn({ path: SOUL_PATH }, "soul.md not found — proceeding without personality preamble");
+    return "";
+  }
+})();
 
 export interface HermesMessage {
   role: "user" | "assistant";
@@ -29,10 +43,15 @@ export async function callHermes(
   conversationHistory: HermesMessage[] = [],
   maxTokens = 1024,
 ): Promise<string> {
+  // Prepend the soul preamble so every agent inherits PULSE's core personality
+  const fullSystemPrompt = SOUL_PREAMBLE
+    ? `${SOUL_PREAMBLE}\n\n---\n\n## Agent-Specific Instructions\n\n${systemPrompt}`
+    : systemPrompt;
+
   log.info({ model: HERMES_MODEL, contextLength: toolResultContext.length }, "Calling Hermes (self-hosted)");
 
   const messages: OpenAIMessage[] = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: fullSystemPrompt },
     ...conversationHistory.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: toolResultContext },
   ];
