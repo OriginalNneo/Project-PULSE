@@ -1,25 +1,29 @@
-import type { EmotionResult } from "../../python-bridge/client.js";
+import type { EmotionResult, AudioEmotionResult } from "../../python-bridge/client.js";
 
-// Negative/distress emotions raise queue priority; positive/neutral lower it.
-// j-hartmann/emotion-english-distilroberta-base emits: anger, disgust, fear,
-// joy, neutral, sadness, surprise.
-const DISTRESS_WEIGHT: Record<string, number> = {
-  anger: 1.0,
-  fear: 1.0,
-  sadness: 0.9,
-  disgust: 0.8,
-  surprise: 0.5,
-  neutral: 0.4,
-  joy: 0.1,
-};
+export interface ScoredEmotion {
+  emotion_score: number; // 0–100
+  emotion_label: string; // rage | angry | frustrated | sad | neutral
+}
 
 /**
- * Map a classifier result to a 0–100 distress score the CCU queue uses for
- * prioritisation. Higher = more distressed / more urgent.
+ * Combine text emotion (and optional dimensional audio emotion) into a 0–100
+ * distress score + label, per the merge spec.
+ *
+ *   text_base   = text emotion top-score (0–1)
+ *   audio_boost = (1 - valence) * arousal * 0.3   (0 when no audio)
+ *   final_score = min((text_base + audio_boost) * 100, 100)
  */
-export function emotionToDistressScore(emotion: EmotionResult): number {
-  const weight = DISTRESS_WEIGHT[emotion.label] ?? 0.5;
-  // Blend the emotion's intrinsic urgency with the model's confidence.
-  const score = weight * (0.6 + 0.4 * emotion.score) * 100;
-  return Math.round(Math.max(0, Math.min(100, score)));
+export function scoreEmotion(text: EmotionResult, audio?: AudioEmotionResult | null): ScoredEmotion {
+  const textBase = text.score;
+  const audioBoost = audio ? (1 - audio.valence) * audio.arousal * 0.3 : 0;
+  const score = Math.min((textBase + audioBoost) * 100, 100);
+  return { emotion_score: Math.round(score), emotion_label: labelFor(score) };
+}
+
+function labelFor(score: number): string {
+  if (score > 80) return "rage";
+  if (score > 65) return "angry";
+  if (score > 50) return "frustrated";
+  if (score > 35) return "sad";
+  return "neutral";
 }

@@ -64,12 +64,31 @@ export function hfJson(model: string, payload: unknown): Promise<unknown> {
   });
 }
 
-/** Binary-in / JSON-out inference (speech-to-text). */
+/** Binary-in / JSON-out inference (speech-to-text, audio emotion). */
 export function hfBinary(model: string, bytes: Uint8Array, contentType: string): Promise<unknown> {
   return call(model, {
     headers: authHeaders({ "Content-Type": contentType }),
     body: new Blob([bytes], { type: contentType }),
   });
+}
+
+/** JSON-in / binary-out inference (text-to-speech). Returns the raw audio bytes. */
+export async function hfRawOut(model: string, payload: unknown): Promise<{ bytes: Uint8Array; contentType: string }> {
+  let res: Response;
+  try {
+    res = await post(model, {
+      headers: authHeaders({ "Content-Type": "application/json", Accept: "audio/flac" }),
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    throw new ExternalServiceError("hf", `request to ${model} failed: ${(err as Error).message}`);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ExternalServiceError("hf", `${model} returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const buf = new Uint8Array(await res.arrayBuffer());
+  return { bytes: buf, contentType: res.headers.get("content-type") ?? "audio/flac" };
 }
 
 export function hfConfigured(): boolean {

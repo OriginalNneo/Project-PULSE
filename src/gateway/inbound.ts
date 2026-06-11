@@ -1,8 +1,8 @@
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue } from "../db/proxy-client.js";
-import { translateText, detectEmotion, transcribeAudio } from "../python-bridge/client.js";
-import { emotionToDistressScore } from "../agents/main/emotion.js";
+import { translateText, detectEmotion, detectAudioEmotion, transcribeAudio } from "../python-bridge/client.js";
+import { scoreEmotion, type ScoredEmotion } from "../agents/main/emotion.js";
 import { notifyNewQueueEntry } from "../dashboard/notify.js";
 import { broadcast } from "./ws.js";
 import { createServiceLogger } from "../shared/logger.js";
@@ -83,9 +83,13 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   );
 
   if (queryResult.requiresHumanReview) {
-    // Emotion classifier is English-only — run it on the normalised text
-    const emotion = await detectEmotion(englishText).catch(() => null);
-    await escalateToQueue(channel, userId, sessionId, messageText, queryResult.content, lang, emotion);
+    // Text emotion (English-only classifier) + audio emotion boost when a voice note was sent
+    const textEmotion = await detectEmotion(englishText).catch(() => null);
+    const audioEmotion = msg.audioBase64
+      ? await detectAudioEmotion(msg.audioBase64, msg.mimeType ?? "audio/ogg").catch(() => null)
+      : null;
+    const scored = textEmotion ? scoreEmotion(textEmotion, audioEmotion) : null;
+    await escalateToQueue(channel, userId, sessionId, messageText, queryResult.content, lang, scored);
     return;
   }
 
@@ -125,13 +129,13 @@ async function escalateToQueue(
   userMessage: string,
   botSummary: string,
   preferredLang: string,
-  emotion: { label: string; score: number } | null,
+  emotion: ScoredEmotion | null,
 ): Promise<void> {
   const entry = await postToQueue({
     sessionId,
     userId,
-    emotion_score: emotion ? emotionToDistressScore(emotion) : 50,
-    emotion_label: emotion?.label ?? "neutral",
+    emotion_score: emotion?.emotion_score ?? 50,
+    emotion_label: emotion?.emotion_label ?? "neutral",
     summary: botSummary,
     chat_history: [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
     preferred_lang: preferredLang,

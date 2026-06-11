@@ -22,8 +22,8 @@ import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
 import { runMainAgent } from "../agents/main/agent.js";
-import { detectEmotion } from "../python-bridge/client.js";
-import { emotionToDistressScore } from "../agents/main/emotion.js";
+import { detectEmotion, synthesizeSpeech } from "../python-bridge/client.js";
+import { scoreEmotion } from "../agents/main/emotion.js";
 import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
 import type { ApiResponse } from "../shared/types/index.js";
@@ -195,12 +195,24 @@ app.post("/detect", async (req: Request, res: Response<ApiResponse>) => {
   res.json({ data: { detectedLanguage: result.detectedLanguage } });
 });
 
-// ── POST /detect-emotion — text → emotion label + distress score ──────────────
+// ── POST /detect-emotion — text → emotion label + 0–100 distress score ────────
 app.post("/detect-emotion", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = z.object({ text: z.string().min(1).max(5000) }).safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
   const emotion = await detectEmotion(parsed.data.text);
-  res.json({ data: { ...emotion, distressScore: emotionToDistressScore(emotion) } });
+  res.json({ data: { ...scoreEmotion(emotion), raw: emotion } });
+});
+
+// ── POST /tts — text → base64 audio (MMS-TTS) ─────────────────────────────────
+app.post("/tts", async (req: Request, res: Response<ApiResponse>) => {
+  const parsed = z.object({
+    text: z.string().min(1).max(5000),
+    language: LanguageEnum.default("en"),
+    speechRate: z.number().min(0.5).max(2).default(1.0),
+  }).safeParse(req.body);
+  if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
+  const audio = await synthesizeSpeech(parsed.data.text, parsed.data.language, parsed.data.speechRate);
+  res.json({ data: audio });
 });
 
 // ── POST /query — CPF knowledge lookup (main agent → query subagent) ──────────
