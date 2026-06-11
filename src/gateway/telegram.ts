@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import {
   sendTelegramMessage,
+  sendTelegramAudio,
   getFileBase64,
   type TelegramUpdate,
 } from "../adapters/telegram/client.js";
@@ -22,6 +23,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   const channel: InboundChannel = {
     prefix: "tg",
     send: (text) => sendTelegramMessage(chatId, text),
+    sendVoice: (audioBase64, mimeType) => sendTelegramAudio(chatId, audioBase64, mimeType),
   };
 
   // Voice note → download + base64 so the pipeline can transcribe it via HF Whisper

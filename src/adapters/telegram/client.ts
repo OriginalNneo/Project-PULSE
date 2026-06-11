@@ -52,6 +52,36 @@ export async function sendTelegramMessage(chatId: number | string, text: string)
   log.info({ chatId }, "Telegram message sent");
 }
 
+/** Send an audio reply (multipart upload of raw bytes). MMS-TTS returns wav/flac,
+ *  so we use sendAudio (sendVoice requires OGG/Opus specifically). */
+export async function sendTelegramAudio(
+  chatId: number | string,
+  audioBase64: string,
+  mimeType: string,
+): Promise<void> {
+  if (!TOKEN) {
+    log.warn("TELEGRAM_BOT_TOKEN not configured — audio not sent");
+    return;
+  }
+  const bytes = Buffer.from(audioBase64, "base64");
+  const ext = mimeType.includes("flac")
+    ? "flac"
+    : mimeType.includes("wav")
+      ? "wav"
+      : mimeType.includes("mpeg") || mimeType.includes("mp3")
+        ? "mp3"
+        : "ogg";
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("audio", new Blob([bytes], { type: mimeType }), `reply.${ext}`);
+  const res = await fetch(`${API}/sendAudio`, { method: "POST", body: form });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ExternalServiceError("telegram", `sendAudio failed: ${res.status} ${text.slice(0, 150)}`);
+  }
+  log.info({ chatId }, "Telegram audio reply sent");
+}
+
 /** Download a Telegram file (e.g. a voice note) and return it base64-encoded. */
 export async function getFileBase64(fileId: string): Promise<{ base64: string; mimeType: string }> {
   const file = await apiCall<{ file_path: string }>("getFile", { file_id: fileId });

@@ -1,7 +1,7 @@
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue } from "../db/proxy-client.js";
-import { translateText, detectEmotion, detectAudioEmotion, transcribeAudio } from "../python-bridge/client.js";
+import { translateText, detectEmotion, detectAudioEmotion, transcribeAudio, synthesizeSpeech } from "../python-bridge/client.js";
 import { scoreEmotion, type ScoredEmotion } from "../agents/main/emotion.js";
 import { notifyNewQueueEntry } from "../dashboard/notify.js";
 import { broadcast } from "./ws.js";
@@ -17,6 +17,8 @@ export interface InboundChannel {
   prefix: string;
   /** Send a plain-text reply back to this user. */
   send: (text: string) => Promise<void>;
+  /** Optional: send an audio reply. Channels that can't (or don't) omit this. */
+  sendVoice?: (audioBase64: string, mimeType: string) => Promise<void>;
 }
 
 export interface InboundMessage {
@@ -98,7 +100,23 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     const t = await translateText(reply, "en", lang).catch(() => null);
     if (t) reply = t.translated_text;
   }
+  // Text is always the primary reply
   await channel.send(reply).catch((err: unknown) => log.error(err, "Failed to send reply"));
+
+  // Optional voice reply: only when the user sent a voice note or opted into voice,
+  // and the channel supports audio. TTS failures never affect the text reply above.
+  const wantsVoice = Boolean(msg.audioBase64) || prefs.voice_enabled === true;
+  if (wantsVoice && channel.sendVoice) {
+    const tts = await synthesizeSpeech(reply, lang, prefs.speech_rate ?? 1.0).catch((err: unknown) => {
+      log.warn({ err }, "TTS failed — text-only reply stands");
+      return null;
+    });
+    if (tts?.audioBase64) {
+      await channel.sendVoice(tts.audioBase64, tts.mimeType).catch((err: unknown) =>
+        log.error(err, "Failed to send voice reply"),
+      );
+    }
+  }
 }
 
 async function relayUserMessageToOfficer(
