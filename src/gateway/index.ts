@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { attachWebSocket } from "./ws.js";
 import { startQueueRefreshTimer } from "../dashboard/queue.js";
 import { webhookRoutes } from "./webhook.js";
+import { telegramRoutes } from "./telegram.js";
 import { dashboardRoutes } from "./dashboard.js";
 import { requireAuth, rateLimiter, errorHandler, requestId, attachTraceContext } from "../shared/middleware/index.js";
 import { createServiceLogger } from "../shared/logger.js";
@@ -50,7 +51,7 @@ app.get("/", (_req, res) => {
     status: "running",
     endpoints: {
       health: { live: "GET /health/live", ready: "GET /health/ready" },
-      agents: { query: "POST /query", transcribe: "POST /transcribe", translate: "POST /translate", detect: "POST /detect" },
+      agents: { query: "POST /query", transcribe: "POST /transcribe", translate: "POST /translate", detect: "POST /detect", emotion: "POST /detect-emotion" },
       api: {
         correspondence: "GET|POST /api/v1/correspondence",
         vulnerability:  "GET|POST /api/v1/vulnerability",
@@ -63,7 +64,7 @@ app.get("/", (_req, res) => {
         billing:        "GET|POST /api/v1/billing",
       },
       dashboard: "GET|POST /dashboard/*",
-      webhook:   "POST /webhook",
+      webhook:   { whatsapp: "POST /webhook/whatsapp", telegram: "POST /webhook/telegram" },
     },
   });
 });
@@ -97,6 +98,9 @@ app.use("/api/v1/billing",        requireAuth, billingRoutes);
 
 // WhatsApp inbound webhook — unauthenticated (Twilio signs requests instead)
 app.use("/webhook", webhookRoutes);
+
+// Telegram inbound webhook — unauthenticated (set a secret path/token in production)
+app.use("/webhook", telegramRoutes);
 
 // CCU officer dashboard REST endpoints
 app.use("/dashboard", requireAuth, dashboardRoutes);
