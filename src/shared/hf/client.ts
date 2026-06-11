@@ -3,7 +3,9 @@ import { ExternalServiceError } from "../errors.js";
 
 const log = createServiceLogger("hf");
 
-const HF_BASE_URL = process.env.HF_API_BASE_URL ?? "https://api-inference.huggingface.co";
+// HuggingFace retired api-inference.huggingface.co; serverless now routes through
+// the Inference Providers router. Path stays /models/{model}.
+const HF_BASE_URL = process.env.HF_API_BASE_URL ?? "https://router.huggingface.co/hf-inference";
 const HF_API_KEY = process.env.HUGGINGFACE_API_KEY ?? "";
 const HF_TIMEOUT_MS = parseInt(process.env.HF_TIMEOUT_MS ?? "", 10) || 30000;
 

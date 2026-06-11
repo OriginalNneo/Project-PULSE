@@ -4,7 +4,7 @@ import { hfJson, hfBinary, hfRawOut } from "../shared/hf/client.js";
 
 const log = createServiceLogger("hf-bridge");
 
-const STT_MODEL = process.env.HF_STT_MODEL ?? "openai/whisper-large-v3";
+const STT_MODEL = process.env.HF_STT_MODEL ?? "openai/whisper-large-v3-turbo";
 const TRANSLATE_MODEL = process.env.HF_TRANSLATE_MODEL ?? "facebook/seamless-m4t-v2-large";
 const DETECT_MODEL = process.env.HF_DETECT_MODEL ?? "papluca/xlm-roberta-base-language-detection";
 const EMOTION_MODEL = process.env.HF_EMOTION_MODEL ?? "j-hartmann/emotion-english-distilroberta-base";

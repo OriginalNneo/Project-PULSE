@@ -1,10 +1,10 @@
+import "dotenv/config"; // MUST be first: loads .env before any module reads process.env (e.g. HF/Telegram keys)
 import http from "http";
 import "express-async-errors"; // forwards async route errors to errorHandler (prevents process crash)
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import { attachWebSocket } from "./ws.js";
 import { startQueueRefreshTimer } from "../dashboard/queue.js";
 import { webhookRoutes } from "./webhook.js";
@@ -28,8 +28,6 @@ import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
 import type { ApiResponse } from "../shared/types/index.js";
 import type { Request, Response } from "express";
-
-dotenv.config();
 
 const log = createServiceLogger("gateway");
 const app = express();
