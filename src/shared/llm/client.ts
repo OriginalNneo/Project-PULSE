@@ -5,9 +5,10 @@ import { createServiceLogger } from "../logger.js";
 
 const log = createServiceLogger("hermes");
 
-const HERMES_BASE_URL = process.env.HERMES_BASE_URL ?? "http://localhost:8000";
-export const HERMES_MODEL = process.env.HERMES_MODEL ?? "NousResearch/Hermes-3-Llama-3.1-8B-Instruct";
-const HERMES_API_KEY = process.env.HERMES_API_KEY ?? "";
+const HERMES_BASE_URL = process.env.LLM_BASE_URL ?? process.env.HERMES_BASE_URL ?? "http://localhost:8000";
+export const HERMES_MODEL = process.env.LLM_MODEL ?? process.env.HERMES_MODEL ?? "NousResearch/Hermes-3-Llama-3.1-8B-Instruct";
+const HERMES_API_KEY = process.env.LLM_API_KEY ?? process.env.HERMES_API_KEY ?? "";
+const HERMES_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS ?? "", 10) || 60000;
 
 // Load soul.md once at startup — injected as a preamble into every agent system prompt
 const SOUL_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../soul.md");
@@ -59,15 +60,24 @@ export async function callHermes(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (HERMES_API_KEY) headers["Authorization"] = `Bearer ${HERMES_API_KEY}`;
 
-  const res = await fetch(`${HERMES_BASE_URL}/v1/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model: HERMES_MODEL,
-      messages,
-      max_tokens: maxTokens,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HERMES_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${HERMES_BASE_URL}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: HERMES_MODEL,
+        messages,
+        max_tokens: maxTokens,
+      }),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");

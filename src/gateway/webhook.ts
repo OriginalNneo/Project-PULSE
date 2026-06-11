@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { runTranscriberAgent } from "../agents/transcriber-agent/agent.js";
+import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue } from "../db/proxy-client.js";
 import { sendWhatsAppMessage, verifyTwilioSignature } from "../adapters/twilio/client.js";
@@ -73,12 +73,12 @@ async function handleInbound(req: Request): Promise<void> {
   }
 
   // Run transcriber (normalise + detect language)
-  const transcriberResult = await runTranscriberAgent(
-    { mode: "text", text: messageText, responseFormat: "text" },
-    { userId, tenantId: "cpf", vulnerabilityTier: "self-service" },
-  ).catch(() => null);
+  const transcriberResult = await runTranscriberSubagent(
+    { mode: "text", text: messageText },
+    { language: prefs.preferred_lang as "en" | "zh" | "ms" | "ta" },
+  );
 
-  const englishText = transcriberResult?.content || messageText;
+  const englishText = transcriberResult?.normalizedText || messageText;
 
   // Run query agent
   const queryResult = await runQueryAgent(

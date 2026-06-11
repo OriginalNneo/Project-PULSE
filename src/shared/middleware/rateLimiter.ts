@@ -11,8 +11,8 @@ const store = new Map<string, RateLimitEntry>();
 const WINDOW_MS = 60_000;
 
 const LIMITS: Record<"anonymous" | "authenticated" | "service" | "admin", number> = {
-  anonymous: 10,
-  authenticated: 100,
+    anonymous: parseInt(process.env.RATE_LIMIT_ANONYMOUS ?? "", 10) || 10,
+    authenticated: parseInt(process.env.RATE_LIMIT_AUTHENTICATED ?? "", 10) || 100,
   service: 1000,
   admin: 500,
 };
