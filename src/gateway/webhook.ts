@@ -4,7 +4,8 @@ import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue } from "../db/proxy-client.js";
 import { sendWhatsAppMessage, verifyTwilioSignature } from "../adapters/twilio/client.js";
-import { translateText } from "../python-bridge/client.js";
+import { translateText, detectEmotion } from "../python-bridge/client.js";
+import { emotionToDistressScore } from "../agents/main/emotion.js";
 import { notifyNewQueueEntry } from "../dashboard/notify.js";
 import { broadcast } from "./ws.js";
 import { createServiceLogger } from "../shared/logger.js";
@@ -92,7 +93,9 @@ async function handleInbound(req: Request): Promise<void> {
   );
 
   if (queryResult.requiresHumanReview) {
-    await escalateToQueue(userId, sessionId, messageText, queryResult.content, phoneNumber, prefs.preferred_lang);
+    // Detect emotion on the English-normalised text (the classifier is English-only)
+    const emotion = await detectEmotion(englishText).catch(() => null);
+    await escalateToQueue(userId, sessionId, messageText, queryResult.content, phoneNumber, prefs.preferred_lang, emotion);
   } else {
     let reply = queryResult.content;
     if (prefs.preferred_lang !== "en") {
@@ -134,12 +137,15 @@ async function escalateToQueue(
   botSummary: string,
   phoneNumber: string,
   preferredLang: string,
+  emotion: { label: string; score: number } | null,
 ): Promise<void> {
+  const emotionScore = emotion ? emotionToDistressScore(emotion) : 50;
+  const emotionLabel = emotion?.label ?? "neutral";
   const entry = await postToQueue({
     sessionId,
     userId,
-    emotion_score: 50,
-    emotion_label: "neutral",
+    emotion_score: emotionScore,
+    emotion_label: emotionLabel,
     summary: botSummary,
     chat_history: [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
     preferred_lang: preferredLang,

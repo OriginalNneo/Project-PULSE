@@ -20,6 +20,8 @@ import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
 import { runMainAgent } from "../agents/main/agent.js";
+import { detectEmotion } from "../python-bridge/client.js";
+import { emotionToDistressScore } from "../agents/main/emotion.js";
 import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
 import type { ApiResponse } from "../shared/types/index.js";
@@ -186,6 +188,14 @@ app.post("/detect", async (req: Request, res: Response<ApiResponse>) => {
     },
   );
   res.json({ data: { detectedLanguage: result.detectedLanguage } });
+});
+
+// ── POST /detect-emotion — text → emotion label + distress score ──────────────
+app.post("/detect-emotion", async (req: Request, res: Response<ApiResponse>) => {
+  const parsed = z.object({ text: z.string().min(1).max(5000) }).safeParse(req.body);
+  if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
+  const emotion = await detectEmotion(parsed.data.text);
+  res.json({ data: { ...emotion, distressScore: emotionToDistressScore(emotion) } });
 });
 
 // ── POST /query — CPF knowledge lookup (main agent → query subagent) ──────────
