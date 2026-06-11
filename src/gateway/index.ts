@@ -71,24 +71,12 @@ app.get("/health/live", (_req, res) => {
 });
 
 app.get("/health/ready", async (_req, res) => {
-  const services = [
-    { name: "py-transcriber", url: `${process.env.PYTHON_BRIDGE_URL ?? "http://localhost:5001"}/health` },
-    { name: "py-translator",  url: `${process.env.TRANSLATOR_URL  ?? "http://localhost:5002"}/health` },
-  ];
-  const checks = await Promise.all(
-    services.map(async ({ name, url }) => {
-      try {
-        const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
-        return { name, ok: r.ok };
-      } catch {
-        return { name, ok: false };
-      }
-    }),
-  );
-  const allOk = checks.every((c) => c.ok);
-  res.status(allOk ? 200 : 503).json({
-    status: allOk ? "ready" : "degraded",
-    services: checks,
+  // Speech/translation/emotion now run on the HuggingFace Inference API rather
+  // than local Python sidecars. Report whether the HF key is configured.
+  const hfConfigured = Boolean(process.env.HUGGINGFACE_API_KEY) && process.env.HUGGINGFACE_API_KEY !== "hf_...";
+  res.status(hfConfigured ? 200 : 503).json({
+    status: hfConfigured ? "ready" : "degraded",
+    services: [{ name: "huggingface-inference-api", ok: hfConfigured }],
     timestamp: new Date().toISOString(),
   });
 });
