@@ -1,4 +1,5 @@
 import http from "http";
+import "express-async-errors"; // forwards async route errors to errorHandler (prevents process crash)
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
