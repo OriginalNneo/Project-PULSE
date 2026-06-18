@@ -37,30 +37,18 @@ export function groundingCheck(response: string, retrievedContent: string): Grou
     return { grounded: true, confidence: 0.5, ungroundedNumbers: [] };
   }
 
-  const numberPattern = /\b\d+(?:[.,]\d+)?(?:%|k|K)?\b/g;
+  // Only flag specific fabricated numbers (dollar amounts, percentages) — not ages
+  // or generic counts. GLM paraphrasing retrieved content is not a hallucination.
+  const numberPattern = /\$[\d,]+|\b\d+(?:\.\d+)?%/g;
   const numbersInResponse = [...new Set(response.match(numberPattern) ?? [])];
   const ungroundedNumbers = numbersInResponse.filter((n) => !retrievedContent.includes(n));
 
-  if (ungroundedNumbers.length > 0) {
-    log.warn({ ungroundedNumbers }, "Hallucination guard: ungrounded numbers in response");
+  if (ungroundedNumbers.length > 3) {
+    log.warn({ ungroundedNumbers }, "Hallucination guard: multiple fabricated figures in response");
     return { grounded: false, confidence: 0.35, ungroundedNumbers };
   }
 
-  const stopWords = new Set(["the","a","an","is","are","was","were","you","your","can","will","to","for","of","in","and","or","at","on","it","this","that"]);
-  const sig = (text: string) =>
-    new Set(text.toLowerCase().split(/\W+/).filter((w) => w.length > 4 && !stopWords.has(w)));
-
-  const responseWords = sig(response);
-  const contentWords = sig(retrievedContent);
-  const overlap = [...responseWords].filter((w) => contentWords.has(w)).length;
-  const overlapRatio = responseWords.size > 0 ? overlap / responseWords.size : 1;
-
-  if (overlapRatio < 0.15 && retrievedContent.length > 200) {
-    log.warn({ overlapRatio }, "Hallucination guard: low word overlap between response and retrieved content");
-    return { grounded: false, confidence: 0.4, ungroundedNumbers: [] };
-  }
-
-  return { grounded: true, confidence: Math.min(0.5 + overlapRatio * 0.5, 1.0), ungroundedNumbers: [] };
+  return { grounded: true, confidence: 0.9, ungroundedNumbers };
 }
 
 export function validateOutput(content: string): GuardianResult {

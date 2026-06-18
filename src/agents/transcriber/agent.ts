@@ -10,6 +10,8 @@ export interface TranscriberSubagentResult {
   normalizedText: string;
   confidence: number;
   pipeline: string[];
+  /** Chinese dialect inferred from slang matches, e.g. "zh-can". Null = not detected. */
+  detectedDialect: string | null;
 }
 
 export async function runTranscriberSubagent(
@@ -43,5 +45,6 @@ export async function runTranscriberSubagent(
     normalizedText: state.normalizedText || state.rawText,
     confidence: state.transcriptionConfidence ?? state.confidence,
     pipeline,
+    detectedDialect: state.detectedDialect ?? null,
   };
 }

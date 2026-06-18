@@ -65,7 +65,7 @@ export async function callHermes(
 
   let res: Response;
   try {
-    res = await fetch(`${HERMES_BASE_URL}/v1/chat/completions`, {
+    res = await fetch(`${HERMES_BASE_URL}/chat/completions`, {
       method: "POST",
       headers,
       signal: controller.signal,

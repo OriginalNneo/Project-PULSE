@@ -157,17 +157,75 @@ export interface TTSResult {
   mimeType: string;
 }
 
-// Text-to-speech via facebook/mms-tts-{lang}. MMS-TTS has no speech-rate control,
-// so speechRate is accepted for signature compatibility but ignored.
+// Voice selection per language — Singapore English voices prioritised
+const EDGE_TTS_VOICES: Record<string, string> = {
+  en: "en-SG-LunaNeural",
+  zh: "zh-CN-XiaoxiaoNeural",
+  ms: "ms-MY-YasminNeural",
+  ta: "ta-SG-VenbaNeural",
+  hi: "hi-IN-SwaraNeural",
+  ml: "ml-IN-SobhanaNeural",
+  pa: "pa-IN-OjaswiniNeural",
+};
+
+// Dialect-specific voice overrides.
+// Cantonese: Edge TTS has a real HK Cantonese neural voice that reads Chinese
+// characters with correct Cantonese pronunciation.
+// Southern Min (Hokkien/Teochew/Hainanese) and Hakka: MMS-TTS nan/hak models
+// require romanised text (POJ/Tai-lo/Hakka romanisation), which the bot doesn't
+// produce — zh-HK-HiuMaanNeural is the closest natural-sounding Chinese voice
+// for southern-dialect speakers over standard Mandarin.
+// Malay varieties and Tamil varieties map to their existing standard voices.
+const DIALECT_TTS_VOICES: Record<string, string> = {
+  "zh-can": "zh-HK-HiuMaanNeural",
+  "zh-hok": "zh-HK-HiuMaanNeural",
+  "zh-teo": "zh-HK-HiuMaanNeural",
+  "zh-hak": "zh-HK-HiuMaanNeural",
+  "zh-hai": "zh-HK-HiuMaanNeural",
+  "ms-bms": "ms-MY-YasminNeural",
+  "ms-joh": "ms-MY-YasminNeural",
+  "ms-boy": "ms-MY-YasminNeural",
+  "ms-jav": "ms-MY-YasminNeural",
+  "ta-sin": "ta-SG-VenbaNeural",
+  "ta-spo": "ta-SG-VenbaNeural",
+};
+
+// Text-to-speech via Microsoft Edge TTS (msedge-tts).
+// Falls back to HF MMS-TTS if edge-tts fails.
+// dialectCode (optional) overrides the language-level voice selection so dialect
+// speakers hear a voice closer to their own variety.
 export async function synthesizeSpeech(
   text: string,
   language: string,
   _speechRate: number,
+  dialectCode?: string,
 ): Promise<TTSResult> {
-  const suffix = TTS_LANG_SUFFIX[language] ?? "eng";
-  const model = `${TTS_MODEL_PREFIX}${suffix}`;
-  log.info({ language, model }, "Synthesizing speech via HF MMS-TTS");
-  const { bytes, contentType } = await hfRawOut(model, { inputs: text });
-  if (bytes.length === 0) throw new ExternalServiceError("hf", "TTS returned no audio");
-  return { audioBase64: Buffer.from(bytes).toString("base64"), mimeType: contentType || "audio/flac" };
+  const voice = (dialectCode ? DIALECT_TTS_VOICES[dialectCode] : undefined)
+    ?? EDGE_TTS_VOICES[language]
+    ?? EDGE_TTS_VOICES["en"]!;
+  log.info({ language, voice }, "Synthesizing speech via Edge TTS");
+
+  try {
+    const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const { audioStream } = tts.toStream(text);
+      audioStream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      audioStream.on("end", resolve);
+      audioStream.on("error", reject);
+    });
+    const audio = Buffer.concat(chunks);
+    if (audio.length === 0) throw new Error("Edge TTS returned empty audio");
+    log.info({ language, voice, bytes: audio.length }, "Edge TTS audio generated");
+    return { audioBase64: audio.toString("base64"), mimeType: "audio/mpeg" };
+  } catch (edgeErr) {
+    log.warn({ edgeErr }, "Edge TTS failed — falling back to HF MMS-TTS");
+    const suffix = TTS_LANG_SUFFIX[language] ?? "eng";
+    const model = `${TTS_MODEL_PREFIX}${suffix}`;
+    const { bytes, contentType } = await hfRawOut(model, { inputs: text });
+    if (bytes.length === 0) throw new ExternalServiceError("hf", "TTS returned no audio");
+    return { audioBase64: Buffer.from(bytes).toString("base64"), mimeType: contentType || "audio/flac" };
+  }
 }

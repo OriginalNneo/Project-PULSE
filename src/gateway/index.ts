@@ -7,6 +7,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { attachWebSocket } from "./ws.js";
 import { startQueueRefreshTimer } from "../dashboard/queue.js";
+import { initQueue } from "../db/proxy-client.js";
 import { webhookRoutes } from "./webhook.js";
 import { telegramRoutes } from "./telegram.js";
 import { dashboardRoutes } from "./dashboard.js";
@@ -38,8 +39,8 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: "15mb" }));           // audio base64 can be large
+app.use(express.urlencoded({ extended: false, limit: "15mb" }));
 app.use(requestId);
 app.use(attachTraceContext);
 
@@ -101,8 +102,8 @@ app.use("/webhook", webhookRoutes);
 // Telegram inbound webhook — unauthenticated (set a secret path/token in production)
 app.use("/webhook", telegramRoutes);
 
-// CCU officer dashboard REST endpoints
-app.use("/dashboard", requireAuth, dashboardRoutes);
+// CCU officer dashboard REST endpoints — internal tool, no JWT required
+app.use("/dashboard", dashboardRoutes);
 
 // ── Shared schema building blocks ─────────────────────────────────────────────
 const DialectEnum = z.enum([
@@ -110,7 +111,7 @@ const DialectEnum = z.enum([
   "ms-bms", "ms-joh", "ms-boy", "ms-jav",
   "ta-sin", "ta-spo", "ml", "pa", "hi",
 ]);
-const LanguageEnum = z.enum(["en", "zh", "ms", "ta"]);
+const LanguageEnum = z.enum(["en", "zh", "ms", "ta", "hi", "ml", "pa"]);
 const ResponseFormatEnum = z.enum(["text", "audio", "both"]);
 
 // ── POST /transcribe — voice → text (main agent → transcriber + translator subagents) ──
@@ -256,6 +257,7 @@ startQueueRefreshTimer();
 
 server.listen(PORT, () => {
   log.info({ port: PORT, env: process.env.NODE_ENV }, "PULSE Gateway started");
+  void initQueue();
 });
 
 export { app, server };

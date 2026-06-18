@@ -10,7 +10,7 @@
     "test:a11y": "echo 'Accessibility tests placeholder — integrate axe-core'"
   },
   "dependencies": {
-    "next": "^14.1.0",
+    "next": "^16.2.9",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
@@ -18,8 +18,8 @@
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
-    "typescript": "^5.3.3",
     "eslint": "^8.56.0",
-    "eslint-config-next": "^14.1.0"
+    "eslint-config-next": "^16.2.9",
+    "typescript": "^5.3.3"
   }
 }

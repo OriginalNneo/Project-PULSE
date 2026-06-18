@@ -1,5 +1,6 @@
 import type { Language, VulnerabilityTier } from "../../shared/types/index.js";
 import { getCpfPage, getCpfLinks, getCpfKnowledge } from "../../db/proxy-client.js";
+import { searchTerminology } from "../../data/knowledge/repository.js";
 import { validateOutput } from "../guardian/agent.js";
 import { formatForTTS } from "../accessibility/agent.js";
 import type { QueryToolName } from "./routes.js";
@@ -24,13 +25,18 @@ export interface QueryPipelineState {
 const CPF_HOTLINE_REDIRECT =
   "I'm sorry, I can't access your personal CPF account details. " +
   "To check your CPF balance, contributions, or payout information, " +
-  "please log in at cpf.gov.sg using your SingPass, or call the CPF hotline at 1800-227-1188 (Mon–Fri, 8am–5:30pm).";
+  "please log in at cpf.gov.sg using your SingPass. " +
+  "If you'd like further assistance, I can redirect you to a CPF officer — just reply *Officer*.";
 
 type QueryToolFn = (state: QueryPipelineState, ctx: QueryToolContext) => Promise<QueryPipelineState>;
 
 export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
   cpf_search: async (state, ctx) => {
-    const results = await getCpfKnowledge(ctx.query).catch(() => null);
+    const [results, terms] = await Promise.all([
+      getCpfKnowledge(ctx.query).catch(() => null),
+      searchTerminology(ctx.query, 3).catch(() => []),
+    ]);
+
     if (results === null || results.length === 0) {
       const page = await getCpfPage("https://www.cpf.gov.sg/member").catch(() => null);
       return {
@@ -39,12 +45,18 @@ export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
         confidence: page ? 0.5 : 0.2,
       };
     }
-    const top = results[0]!;
+
+    // Combine top 3 results so the LLM has richer context to draw from
+    const knowledgeParts = results.slice(0, 3).map((r) => r.answer).join("\n\n---\n\n");
+    const termGlossary = terms.length > 0
+      ? `\n\nKey terms:\n${terms.map((t) => `• ${t.term}: ${t.plainEnglish}`).join("\n")}`
+      : "";
+
     return {
       ...state,
-      retrievedContent: `${top.answer}\n\nSource: ${top.source_url}`,
-      navigationUrl: top.source_url,
-      confidence: 0.85,
+      retrievedContent: `${knowledgeParts}${termGlossary}\n\nSource: ${results[0]!.source_url}`,
+      navigationUrl: results[0]!.source_url,
+      confidence: 0.9,
     };
   },
 
@@ -69,16 +81,25 @@ export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
   },
 
   service_lookup: async (state, ctx) => {
-    const links = await getCpfLinks(ctx.query).catch(() => null);
-    const knowledge = await getCpfKnowledge(ctx.query).catch(() => null);
+    const [links, knowledge, terms] = await Promise.all([
+      getCpfLinks(ctx.query).catch(() => null),
+      getCpfKnowledge(ctx.query).catch(() => null),
+      searchTerminology(ctx.query, 3).catch(() => []),
+    ]);
 
     const parts: string[] = [];
+
+    // Include top 3 knowledge answers for richer LLM context
     if (knowledge !== null && knowledge.length > 0) {
-      parts.push(knowledge[0]!.answer);
+      parts.push(knowledge.slice(0, 3).map((k) => k.answer).join("\n\n---\n\n"));
       if (knowledge[0]!.source_url) parts.push(`More info: ${knowledge[0]!.source_url}`);
     }
     if (links !== null && links.length > 0) {
-      parts.push(`Apply or view: ${links[0]!.url}`);
+      const linkLines = links.slice(0, 3).map((l) => `• ${l.service_name}: ${l.url}`).join("\n");
+      parts.push(`Relevant links:\n${linkLines}`);
+    }
+    if (terms.length > 0) {
+      parts.push(`Key terms:\n${terms.map((t) => `• ${t.term}: ${t.plainEnglish}`).join("\n")}`);
     }
 
     return {
@@ -90,13 +111,15 @@ export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
   },
 
   validate_output: async (state, _ctx) => {
-    if (state.isPersonalDataRequest) {
-      return { ...state, outputText: CPF_HOTLINE_REDIRECT, blocked: false };
-    }
+    // Always run PII check first — even personal-data paths may carry user-provided PII
+    // (e.g. "My NRIC is S1234567Z, what's my balance?"). Block before returning anything.
     const text = state.retrievedContent || state.query;
     const result = validateOutput(text);
     if (!result.safe) {
       return { ...state, blocked: true, blockReason: result.reason, outputText: text };
+    }
+    if (state.isPersonalDataRequest) {
+      return { ...state, outputText: CPF_HOTLINE_REDIRECT, blocked: false };
     }
     return { ...state, outputText: text };
   },
