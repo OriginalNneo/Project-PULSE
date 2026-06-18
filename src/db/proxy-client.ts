@@ -372,6 +372,22 @@ export async function updateQueueEmotion(
   return activeEntry.queueId;
 }
 
+export async function appendToQueueHistory(
+  queueId: string,
+  message: { role: string; content: string; ts: string },
+): Promise<void> {
+  const entry = queueStore.get(queueId);
+  if (!entry) return;
+  const updated: QueueEntry = {
+    ...entry,
+    chat_history: [...entry.chat_history, message],
+  };
+  queueStore.set(queueId, updated);
+  getPulseCollection("ccu_queue")
+    .then((col) => col?.updateOne({ queueId }, { $push: { chat_history: message } } as any))
+    .catch((err) => log.warn({ err }, "Failed to append to queue history in MongoDB"));
+}
+
 export async function getQueueStats(): Promise<QueueStats> {
   const waiting = [...queueStore.values()].filter((e) => e.status === "waiting").length;
   return { waiting, avg_wait_minutes: 0 };

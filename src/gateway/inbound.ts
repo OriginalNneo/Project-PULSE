@@ -1,7 +1,7 @@
 import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
-import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory } from "../db/proxy-client.js";
 import { translateText, synthesizeSpeech, detectLanguage, detectEmotion, detectAudioEmotion } from "../python-bridge/client.js";
 import { scoreEmotion, type ScoredEmotion } from "../agents/main/emotion.js";
 import { notifyNewQueueEntry } from "../dashboard/notify.js";
@@ -13,6 +13,9 @@ import { pushEmotionEvent, getLatestEmotionForUser } from "./dashboard.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("inbound");
+
+// Per-user rolling conversation history — cleared when the user escalates to an officer
+const conversationHistoryStore = new Map<string, Array<{ role: string; content: string; ts: string }>>();
 
 type Lang = Language;
 
@@ -453,8 +456,17 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   const { cleanReply, ttsText: llmTtsText } = interceptTtsCall(reply);
   reply = cleanReply;
 
+  // Save plain text for chat_history before HTML formatting
+  const plainBotReply = reply;
+
   // Format: strip markdown, bold CPF terms with HTML tags
   reply = formatReply(reply, "html");
+
+  // Append user + bot turns to rolling history (used as full chat_history at escalation time)
+  const hist = conversationHistoryStore.get(userId) ?? [];
+  hist.push({ role: "user", content: messageText, ts: new Date().toISOString() });
+  hist.push({ role: "agent", content: plainBotReply, ts: new Date().toISOString() });
+  conversationHistoryStore.set(userId, hist.slice(-30)); // keep last 15 exchanges
 
   // Await the emotion result (already scored and pushed to ring buffer by .then() above)
   const scored = await emotionPromise;
@@ -517,13 +529,15 @@ async function relayToOfficer(
     const t = await translateText(messageText, userLang, "en").catch(() => null);
     if (t) englishText = t.translated_text;
   }
+  const ts = new Date().toISOString();
   broadcast("user_message", {
     queueId, userId,
     message: englishText,
     original_message: messageText,
     original_lang: userLang,
-    ts: new Date().toISOString(),
+    ts,
   });
+  appendToQueueHistory(queueId, { role: "user", content: englishText, ts }).catch(() => null);
 }
 
 export async function escalateUser(channel: InboundChannel, userId: string): Promise<void> {
@@ -552,7 +566,9 @@ export async function escalateUser(channel: InboundChannel, userId: string): Pro
     : "User requested CPF officer via button";
 
   await upsertUserPrefs({ ...(prefs ?? { userId, preferred_lang: "en", voice_enabled: false, speech_rate: 1.0, accessibility_mode: "standard" }), pendingOfficerOffer: false }).catch(() => null);
-  await doEscalate(channel, userId, sessionId, summary, "", lang, emotion);
+  const chatHistory = conversationHistoryStore.get(userId) ?? [];
+  conversationHistoryStore.delete(userId);
+  await doEscalate(channel, userId, sessionId, summary, "", lang, emotion, chatHistory);
 }
 
 async function doEscalate(
@@ -563,13 +579,16 @@ async function doEscalate(
   botSummary: string,
   preferredLang: string,
   emotion: ScoredEmotion | null,
+  chatHistory?: Array<{ role: string; content: string; ts: string }>,
 ): Promise<void> {
   const entry = await postToQueue({
     sessionId, userId,
     emotion_score: emotion?.emotion_score ?? 50,
     emotion_label: emotion?.emotion_label ?? "neutral",
     summary: botSummary || userMessage,
-    chat_history: [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
+    chat_history: chatHistory?.length
+      ? chatHistory
+      : [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
     preferred_lang: preferredLang,
     dialect_hint: null,
   }).catch((e: unknown) => { log.error({ userId, err: String(e) }, "postToQueue failed"); return null; });

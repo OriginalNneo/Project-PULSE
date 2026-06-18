@@ -22,6 +22,10 @@ import { notificationRoutes } from "../services/notification/routes.js";
 import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
+import { consoleRoutes } from "../services/console/routes.js";
+import { copilotRoutes } from "../services/copilot/routes.js";
+import { officerRoutes } from "../services/officer/routes.js";
+import { adaptiveLocalRoutes } from "../services/adaptive-local/index.js";
 import { runMainAgent } from "../agents/main/agent.js";
 import { detectEmotion, synthesizeSpeech } from "../python-bridge/client.js";
 import { scoreEmotion } from "../agents/main/emotion.js";
@@ -94,7 +98,11 @@ app.use("/api/v1/delivery",       requireAuth, deliveryRoutes);
 app.use("/api/v1/notification",   requireAuth, notificationRoutes);
 app.use("/api/v1/proxy",          requireAuth, proxyRoutes);
 app.use("/api/v1/analytics",      requireAuth, analyticsRoutes);
-app.use("/api/v1/billing",        requireAuth, billingRoutes);
+app.use("/api/v1/billing",         requireAuth, billingRoutes);
+app.use("/api/v1/console",        requireAuth, consoleRoutes);
+app.use("/api/v1/copilot",        requireAuth, copilotRoutes);
+app.use("/api/v1/officer",        officerRoutes);          // no requireAuth — internal tool
+app.use("/api/v1/adaptive-local", adaptiveLocalRoutes);
 
 // WhatsApp inbound webhook — unauthenticated (Twilio signs requests instead)
 app.use("/webhook", webhookRoutes);
