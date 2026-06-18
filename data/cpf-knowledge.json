@@ -1,0 +1,509 @@
+{
+  "version": "2026.1",
+  "source": "https://www.cpf.gov.sg",
+  "fetchedAt": "2026-05-31",
+  "note": "Live-fetched from the CPF member site. Figures reflect Jan-2026 announcements. Personal balances must always be confirmed on the member's own CPF dashboard.",
+  "sections": [
+    { "sectionKey": "cpf-overview", "title": "CPF Overview", "url": "https://www.cpf.gov.sg/member/cpf-overview", "summary": "The basics of the Central Provident Fund: the four accounts, how contributions are split, and how savings move as you age." },
+    { "sectionKey": "growing-savings", "title": "Growing Your Savings", "url": "https://www.cpf.gov.sg/member/growing-your-savings", "summary": "How CPF savings grow through contributions, attractive interest, voluntary top-ups, investments, and government matching grants." },
+    { "sectionKey": "retirement-income", "title": "Retirement Income", "url": "https://www.cpf.gov.sg/member/retirement-income", "summary": "Planning for retirement, the retirement sums, CPF LIFE monthly payouts from age 65, withdrawals, and government support." },
+    { "sectionKey": "home-ownership", "title": "Home Ownership", "url": "https://www.cpf.gov.sg/member/home-ownership", "summary": "Using CPF Ordinary Account savings to buy and protect a home, and refunding CPF with accrued interest when you sell." },
+    { "sectionKey": "healthcare-financing", "title": "Healthcare Financing", "url": "https://www.cpf.gov.sg/member/healthcare-financing", "summary": "Paying for healthcare through MediSave, MediShield Life, CareShield Life and MediFund." },
+    { "sectionKey": "account-services", "title": "Account Services", "url": "https://www.cpf.gov.sg/member/account-services", "summary": "Managing your account: nomination, the Dependants' Protection Scheme, account closure, and protecting yourself from scams." }
+  ],
+  "documents": [
+    {
+      "docId": "cpf-four-accounts",
+      "sectionKey": "cpf-overview",
+      "topic": "Your CPF Accounts",
+      "title": "The four CPF accounts and what each is for",
+      "summary": "Your CPF savings sit in separate accounts, each with its own job. Money in these accounts earns interest and is used for housing, healthcare and retirement.",
+      "keyFacts": [
+        "Ordinary Account (OA): used mainly for housing, insurance, investment and education.",
+        "Special Account (SA): a retirement-focused account for members below 55.",
+        "MediSave Account (MA): used for hospital bills and approved health insurance like MediShield Life and CareShield Life.",
+        "Retirement Account (RA): created automatically at age 55 to fund your monthly CPF LIFE payouts."
+      ],
+      "audienceTags": ["all"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/cpf-overview",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-age-55-transition",
+      "sectionKey": "cpf-overview",
+      "topic": "Turning 55",
+      "title": "What happens to your CPF at age 55",
+      "summary": "When you turn 55, CPF creates a Retirement Account for you. Savings from your Special Account, then your Ordinary Account, move into it up to your retirement sum.",
+      "keyFacts": [
+        "A Retirement Account (RA) is created for you at age 55.",
+        "From 2025, the Special Account is closed at 55 and its savings move to the RA (the rest goes to the OA).",
+        "The RA holds your retirement sum, which is used to provide lifelong CPF LIFE payouts.",
+        "You can withdraw some CPF savings from age 55 (see withdrawal rules)."
+      ],
+      "audienceTags": ["all", "seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/cpf-overview",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-contribution-rates",
+      "sectionKey": "cpf-overview",
+      "topic": "Contribution Rates",
+      "title": "How much you and your employer contribute (from 1 Jan 2026)",
+      "summary": "Each month, you and your employer put a share of your wages into CPF. The total rate is highest for younger workers and steps down as you get older.",
+      "keyFacts": [
+        "Aged 55 and below: 37% of wages total (17% employer + 20% employee).",
+        "Rates step down for older workers; above age 70 the total is 12.5% (7.5% employer + 5% employee).",
+        "From 2026, senior worker (55-65) contribution rates rose again as part of a planned increase.",
+        "CPF contributions are payable on monthly wages above $750 (with partial rates between $50 and $750)."
+      ],
+      "audienceTags": ["all", "employment"],
+      "sourceUrl": "https://www.cpf.gov.sg/employer/infohub/news/cpf-related-announcements/new-contribution-rates",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-salary-ceiling",
+      "sectionKey": "cpf-overview",
+      "topic": "CPF Salary Ceiling",
+      "title": "The monthly salary ceiling for CPF (from 1 Jan 2026)",
+      "summary": "CPF contributions only apply up to a monthly wage limit, called the Ordinary Wage ceiling. This limit has been raised in steps.",
+      "keyFacts": [
+        "From 1 January 2026 the CPF monthly salary (Ordinary Wage) ceiling is $8,000 — the final step of the planned increase.",
+        "Wages above the ceiling do not attract compulsory CPF contributions.",
+        "The ceiling rose in steps: $6,300 (2023) to $8,000 (2026)."
+      ],
+      "audienceTags": ["all", "employment"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/cpf-overview",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-interest-rates",
+      "sectionKey": "growing-savings",
+      "topic": "CPF Interest Rates",
+      "title": "How much interest your CPF savings earn (2026)",
+      "summary": "CPF savings earn interest set by the government, with guaranteed floor rates. Your savings keep growing safely even when you do nothing.",
+      "keyFacts": [
+        "Ordinary Account (OA): 2.5% per year (the floor rate), for 1 January to 31 March 2026.",
+        "Special, MediSave and Retirement Accounts (SMRA): 4.0% per year (the floor rate), extended until 31 December 2026.",
+        "The SMRA rate is pegged to the 12-month average yield of 10-year Singapore Government Securities plus 1%.",
+        "Interest is risk-free and backed by the Singapore Government."
+      ],
+      "audienceTags": ["all", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/infohub/news/news-releases/cpf-interest-rates-from-1-january-to-31-march-2026-and-basic-healthcare-sum-for-2026",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-extra-interest",
+      "sectionKey": "growing-savings",
+      "topic": "Extra Interest",
+      "title": "Extra interest on your first savings",
+      "summary": "CPF pays extra interest on your first savings so smaller balances grow faster. Seniors get even more.",
+      "keyFacts": [
+        "You earn up to 5% per year if you are below age 55, and up to 6% per year if you are 55 and older.",
+        "Extra 1% is paid on the first $60,000 of your combined balances (up to $20,000 from the OA).",
+        "Members aged 55 and above earn an additional 1% on the first $30,000, on top of the above."
+      ],
+      "audienceTags": ["all", "seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/growing-your-savings/earning-higher-returns/earning-attractive-interest",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-cash-topups-rstu",
+      "sectionKey": "growing-savings",
+      "topic": "Cash Top-Ups (RSTU)",
+      "title": "Topping up your retirement and MediSave savings",
+      "summary": "You can voluntarily top up your own or a loved one's CPF to grow retirement savings and possibly receive tax relief.",
+      "keyFacts": [
+        "The Retirement Sum Topping-Up scheme lets you top up the SA (below 55) or RA (55 and above).",
+        "You can also top up your MediSave Account for healthcare needs.",
+        "Cash top-ups may qualify for tax relief, subject to limits.",
+        "Top-ups grow at CPF interest rates and cannot be withdrawn early."
+      ],
+      "audienceTags": ["all", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/growing-your-savings/saving-more-with-cpf",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-matched-retirement-savings",
+      "sectionKey": "growing-savings",
+      "topic": "Matched Retirement Savings Scheme",
+      "title": "Government matches top-ups for eligible seniors",
+      "summary": "For eligible lower-income seniors, the government matches cash top-ups to retirement savings dollar-for-dollar.",
+      "keyFacts": [
+        "Dollar-for-dollar matching on retirement top-ups, up to $2,000 each year.",
+        "There is a lifetime matching cap of $20,000.",
+        "Aimed at seniors who have not yet reached the Basic Retirement Sum."
+      ],
+      "audienceTags": ["seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/growing-your-savings/government-support/matching-grant-for-retirement",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-medisave-matching",
+      "sectionKey": "growing-savings",
+      "topic": "MediSave Matching",
+      "title": "Matching grant for MediSave",
+      "summary": "Eligible members can receive government matching on cash top-ups to their MediSave Account.",
+      "keyFacts": [
+        "Dollar-for-dollar matching on MediSave top-ups, up to $1,000 a year for eligible members."
+      ],
+      "audienceTags": ["all", "healthcare"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/growing-your-savings/government-support",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-investments-cpfis",
+      "sectionKey": "growing-savings",
+      "topic": "Investing CPF Savings",
+      "title": "Investing your CPF savings",
+      "summary": "You may invest part of your OA and SA savings through the CPF Investment Scheme if you want to seek higher returns, accepting some risk.",
+      "keyFacts": [
+        "The CPF Investment Scheme (CPFIS) lets you invest OA and SA savings in approved products.",
+        "Investing carries risk; the guaranteed CPF interest is given up on invested amounts.",
+        "Suitable mainly for members comfortable with investment risk."
+      ],
+      "audienceTags": ["all"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/growing-your-savings/investments-and-interest",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-retirement-sums",
+      "sectionKey": "retirement-income",
+      "topic": "Retirement Sums",
+      "title": "Basic, Full and Enhanced Retirement Sums (2026)",
+      "summary": "Your retirement sum is the amount set aside at 55 to give you monthly payouts for life. There are three levels — you can aim for the one that fits your needs.",
+      "keyFacts": [
+        "Basic Retirement Sum (BRS): about $110,200 for those turning 55 in 2026 (excludes rental costs; can be met partly with a property pledge).",
+        "Full Retirement Sum (FRS): about $220,400 — double the BRS.",
+        "Enhanced Retirement Sum (ERS): about $440,800 — four times the BRS — for those who want higher payouts.",
+        "Higher retirement sums give higher lifelong monthly payouts."
+      ],
+      "audienceTags": ["all", "seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/service/article/what-are-the-retirement-sums-basic-retirement-sum-brs-full-retirement-sum-frs-and-enhanced-retirement-sum-ers",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-life",
+      "sectionKey": "retirement-income",
+      "topic": "CPF LIFE",
+      "title": "CPF LIFE: monthly payouts for as long as you live",
+      "summary": "CPF LIFE is a national longevity insurance scheme. It gives you a monthly payout for the rest of your life, starting from age 65.",
+      "keyFacts": [
+        "Payouts start at age 65 (you can defer to age 70 for higher payouts).",
+        "Standard Plan illustrative payouts: about $950/month (Basic Retirement Sum), $1,780/month (Full Retirement Sum), $3,440/month (Enhanced Retirement Sum).",
+        "Your payout depends on your Retirement Account balance when payouts begin.",
+        "Payouts continue for life, even after your CPF savings are used up."
+      ],
+      "audienceTags": ["all", "seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/service/article/how-much-cpf-payouts-can-i-get-every-month",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-life-plans",
+      "sectionKey": "retirement-income",
+      "topic": "CPF LIFE Plans",
+      "title": "The three CPF LIFE plans",
+      "summary": "CPF LIFE offers three plans so you can choose how your payouts are shaped over time.",
+      "keyFacts": [
+        "Standard Plan: higher, level monthly payouts (most members).",
+        "Basic Plan: lower monthly payouts but typically leaves more as a bequest.",
+        "Escalating Plan: payouts start lower and rise about 2% each year to help with rising prices."
+      ],
+      "audienceTags": ["all", "seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/retirement-income/monthly-payouts/cpf-life",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-payout-eligibility-age",
+      "sectionKey": "retirement-income",
+      "topic": "Payout Eligibility Age",
+      "title": "When your monthly payouts start",
+      "summary": "Your CPF monthly payouts begin at the payout eligibility age, which is 65. You may choose to start later for higher payouts.",
+      "keyFacts": [
+        "Payout eligibility age is 65.",
+        "Deferring the start of payouts (up to age 70) increases your monthly amount.",
+        "You will be notified before you reach 65 to choose your CPF LIFE plan."
+      ],
+      "audienceTags": ["seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/retirement-income/planning",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-withdrawals-55",
+      "sectionKey": "retirement-income",
+      "topic": "Withdrawing CPF Savings",
+      "title": "Withdrawing CPF savings from age 55",
+      "summary": "From age 55 you can withdraw some CPF savings as cash, while the rest stays to provide your monthly payouts.",
+      "keyFacts": [
+        "You can withdraw up to $5,000 from age 55 regardless of how much you have.",
+        "If you have more than your Full Retirement Sum, you may withdraw the balance above it (subject to rules).",
+        "Property owners can choose to set aside the Basic Retirement Sum and withdraw more, using a property pledge."
+      ],
+      "audienceTags": ["seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/retirement-income/retirement-withdrawals",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-silver-support",
+      "sectionKey": "retirement-income",
+      "topic": "Silver Support Scheme",
+      "title": "Silver Support Scheme for seniors",
+      "summary": "The Silver Support Scheme gives extra quarterly cash to eligible seniors who had lower incomes during their working years.",
+      "keyFacts": [
+        "Automatic quarterly payouts for eligible seniors aged 65 and above.",
+        "No application needed — eligibility is assessed automatically.",
+        "Targeted at the bottom group of seniors by lifetime wages and housing type."
+      ],
+      "audienceTags": ["seniors", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/retirement-income/government-support",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-housing-usage",
+      "sectionKey": "home-ownership",
+      "topic": "Using CPF for Housing",
+      "title": "Using your CPF Ordinary Account to buy a home",
+      "summary": "You can use your Ordinary Account savings to help buy a home and pay the monthly housing loan, within limits.",
+      "keyFacts": [
+        "OA savings can pay for the flat purchase, stamp duties and monthly mortgage instalments.",
+        "There are limits on how much OA you can use for a property.",
+        "Using more OA for housing means less left for retirement, so balance cash and CPF."
+      ],
+      "audienceTags": ["all", "housing"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/home-ownership/using-your-cpf-to-buy-a-home",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-accrued-interest",
+      "sectionKey": "home-ownership",
+      "topic": "Accrued Interest",
+      "title": "Refunding CPF with accrued interest when you sell",
+      "summary": "When you sell a home bought with CPF, you must return the CPF you used plus the interest it would have earned. This protects your retirement savings.",
+      "keyFacts": [
+        "When you sell, you refund the OA amount used plus accrued interest back into your CPF.",
+        "Accrued interest is the interest your used OA savings would have earned if left in CPF (2.5% per year).",
+        "If your home is pledged for retirement adequacy, the pledged amount must also be refunded on sale."
+      ],
+      "audienceTags": ["all", "housing"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/home-ownership/protecting-against-losing-your-home",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-home-protection-scheme",
+      "sectionKey": "home-ownership",
+      "topic": "Home Protection Scheme",
+      "title": "Home Protection Scheme (HPS)",
+      "summary": "HPS is a mortgage-reducing insurance that protects your HDB flat if you die, become terminally ill, or are permanently disabled.",
+      "keyFacts": [
+        "HPS is mandatory if you use CPF to pay your HDB monthly instalments.",
+        "It pays off or reduces the outstanding HDB loan so your family keeps the home.",
+        "Premiums can be paid from your Ordinary Account."
+      ],
+      "audienceTags": ["all", "housing"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/home-ownership/protecting-against-losing-your-home",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-voluntary-housing-refund",
+      "sectionKey": "home-ownership",
+      "topic": "Voluntary Housing Refund",
+      "title": "Voluntarily refunding CPF used for housing",
+      "summary": "You can choose to return CPF savings you used for your home, even without selling, so the money earns retirement interest again.",
+      "keyFacts": [
+        "A voluntary housing refund returns used OA amounts (and accrued interest) to your CPF.",
+        "The refunded savings then earn CPF interest for your retirement.",
+        "This is optional and can be done while you still own the home."
+      ],
+      "audienceTags": ["all", "housing", "retirement"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/home-ownership/using-your-cpf-to-buy-a-home",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-medisave",
+      "sectionKey": "healthcare-financing",
+      "topic": "MediSave",
+      "title": "MediSave: your healthcare savings",
+      "summary": "MediSave is the part of CPF set aside for healthcare. You can use it for yourself and your family for hospital stays, some treatments, and health insurance premiums.",
+      "keyFacts": [
+        "MediSave pays for hospitalisation, day surgery, some outpatient treatments, and approved insurance premiums.",
+        "It can be used for approved family members too.",
+        "MediSave Care allows withdrawals of up to $200 per month for severe disability/long-term care.",
+        "There are withdrawal limits for different treatments to keep savings for future needs."
+      ],
+      "audienceTags": ["all", "healthcare", "seniors"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/healthcare-financing",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-basic-healthcare-sum",
+      "sectionKey": "healthcare-financing",
+      "topic": "Basic Healthcare Sum",
+      "title": "Basic Healthcare Sum (BHS) for 2026",
+      "summary": "The Basic Healthcare Sum is the target amount of MediSave you aim to set aside for healthcare in old age. It is reviewed each year.",
+      "keyFacts": [
+        "For members below 65, the BHS is $79,000 in 2026 (raised from $75,500 in 2025).",
+        "For members who turn 65 in 2026, the BHS is fixed at $79,000 for the rest of their lives.",
+        "MediSave savings above the BHS flow to your other CPF accounts (or are paid out at 65)."
+      ],
+      "audienceTags": ["all", "healthcare", "seniors"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/infohub/news/news-releases/cpf-interest-rates-from-1-january-to-31-march-2026-and-basic-healthcare-sum-for-2026",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-medishield-life",
+      "sectionKey": "healthcare-financing",
+      "topic": "MediShield Life",
+      "title": "MediShield Life",
+      "summary": "MediShield Life is a basic health insurance that helps pay large hospital bills and costly treatments, for life.",
+      "keyFacts": [
+        "Covers large hospital bills and selected costly outpatient treatments such as dialysis.",
+        "Covers all Singapore Citizens and Permanent Residents for life, including those with pre-existing conditions.",
+        "Premiums can be paid using MediSave."
+      ],
+      "audienceTags": ["all", "healthcare"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/healthcare-financing/medishield-life",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-careshield-life",
+      "sectionKey": "healthcare-financing",
+      "topic": "CareShield Life",
+      "title": "CareShield Life",
+      "summary": "CareShield Life is long-term care insurance that gives monthly cash payouts if you become severely disabled and need help with daily living.",
+      "keyFacts": [
+        "Provides monthly cash payouts for life if you become severely disabled.",
+        "Payouts can be used for any care needs, paid in cash to you.",
+        "Premiums can be paid using MediSave."
+      ],
+      "audienceTags": ["all", "healthcare", "seniors"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/healthcare-financing/careshield-life",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-eldershield",
+      "sectionKey": "healthcare-financing",
+      "topic": "ElderShield",
+      "title": "ElderShield",
+      "summary": "ElderShield is the earlier long-term care insurance scheme that pays a monthly cash payout for a limited period if you are severely disabled.",
+      "keyFacts": [
+        "Pays monthly cash payouts of up to $400 for up to six years.",
+        "Being progressively replaced by CareShield Life for younger cohorts."
+      ],
+      "audienceTags": ["seniors", "healthcare"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/healthcare-financing",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-medifund",
+      "sectionKey": "healthcare-financing",
+      "topic": "MediFund",
+      "title": "MediFund: the healthcare safety net",
+      "summary": "MediFund is a government endowment fund that helps needy Singaporeans who still cannot afford their bills after using MediShield Life and MediSave.",
+      "keyFacts": [
+        "A safety net for those who cannot pay even after other help.",
+        "Applied for through the medical social worker at the hospital or institution.",
+        "Help is assessed based on the patient's financial situation."
+      ],
+      "audienceTags": ["all", "healthcare"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/healthcare-financing",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-nomination",
+      "sectionKey": "account-services",
+      "topic": "CPF Nomination",
+      "title": "CPF Nomination: deciding who receives your CPF",
+      "summary": "A CPF nomination lets you decide who receives your CPF savings when you pass away, and how much each person gets.",
+      "keyFacts": [
+        "Without a nomination, your CPF savings are distributed by the Public Trustee under intestacy laws (which takes time and a fee).",
+        "With a nomination, savings go directly to the people you choose.",
+        "You can make or update a nomination online or at a CPF Service Centre."
+      ],
+      "audienceTags": ["all", "seniors"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/account-services",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-dependants-protection-scheme",
+      "sectionKey": "account-services",
+      "topic": "Dependants' Protection Scheme",
+      "title": "Dependants' Protection Scheme (DPS)",
+      "summary": "DPS is a term life insurance that pays your family a lump sum if you die, become terminally ill, or are totally permanently disabled.",
+      "keyFacts": [
+        "Provides financial support to your family in difficult times.",
+        "Premiums can be paid from your CPF savings.",
+        "Covers members up to a set age."
+      ],
+      "audienceTags": ["all", "employment"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/account-services",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-account-closure",
+      "sectionKey": "account-services",
+      "topic": "Account Closure",
+      "title": "Closing a CPF account",
+      "summary": "CPF savings are paid out when you pass away (to nominees) or when you permanently leave Singapore and West Malaysia.",
+      "keyFacts": [
+        "On death, savings go to nominees if you nominated; otherwise the Public Trustee distributes them.",
+        "Members permanently leaving Singapore and West Malaysia may close their accounts and withdraw all savings.",
+        "Proof of intention to leave permanently is required for closure."
+      ],
+      "audienceTags": ["all"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/account-services",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-scam-safeguards",
+      "sectionKey": "account-services",
+      "topic": "Protecting Against Scams",
+      "title": "Keeping your CPF safe from scams",
+      "summary": "CPF offers safeguards to protect your account from unauthorised access and scams. Never share your Singpass password or one-time passwords.",
+      "keyFacts": [
+        "CPF will never ask for your Singpass password or banking OTP.",
+        "The Trusted Contacts feature lets a designated person help protect your account if you are vulnerable to scams.",
+        "You can lock your CPF savings from online withdrawals for extra protection.",
+        "Always type gov.sg website addresses yourself instead of clicking links in messages."
+      ],
+      "audienceTags": ["all", "seniors"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/account-services",
+      "confidence": "verified"
+    },
+    {
+      "docId": "cpf-update-particulars",
+      "sectionKey": "account-services",
+      "topic": "Updating Your Details",
+      "title": "Viewing balances and updating your contact details",
+      "summary": "You can view your latest CPF balances and statements, and keep your contact details up to date, through the member portal using Singpass.",
+      "keyFacts": [
+        "Log in with Singpass to view your account balances and statements.",
+        "Keep your mobile number and email current to receive CPF updates and alerts.",
+        "Updating contact preferences helps you get timely reminders."
+      ],
+      "audienceTags": ["all"],
+      "sourceUrl": "https://www.cpf.gov.sg/member/account-services",
+      "confidence": "verified"
+    }
+  ],
+  "terminology": [
+    { "term": "Ordinary Account (OA)", "plainEnglish": "Savings used mainly for housing, insurance, investment and education.", "zh": "普通账户：主要用于买房、保险、投资和教育的储蓄。", "ms": "Akaun Biasa: simpanan terutama untuk perumahan, insurans, pelaburan dan pendidikan.", "ta": "சாதாரண கணக்கு: வீடு, காப்பீடு, முதலீடு, கல்விக்கு பயன்படுத்தப்படும் சேமிப்பு." },
+    { "term": "Special Account (SA)", "plainEnglish": "A retirement-focused savings account for members below 55.", "zh": "特别账户：为55岁以下会员设立、专注退休的储蓄账户。", "ms": "Akaun Khas: akaun simpanan tumpuan persaraan untuk ahli di bawah 55 tahun.", "ta": "சிறப்பு கணக்கு: 55 வயதுக்குக் கீழ் உள்ளவர்களுக்கான ஓய்வூதிய சேமிப்பு கணக்கு." },
+    { "term": "MediSave Account (MA)", "plainEnglish": "CPF savings set aside for healthcare and approved health insurance.", "zh": "保健储蓄账户：预留用于医疗和批准的健康保险的公积金储蓄。", "ms": "Akaun MediSave: simpanan CPF untuk penjagaan kesihatan dan insurans kesihatan yang diluluskan.", "ta": "மெடிசேவ் கணக்கு: சுகாதாரம் மற்றும் அங்கீகரிக்கப்பட்ட காப்பீட்டுக்கான சேமிப்பு." },
+    { "term": "Retirement Account (RA)", "plainEnglish": "Created at age 55 to hold your retirement sum and pay your monthly CPF LIFE payouts.", "zh": "退休账户：55岁时设立，用于存放退休存款并支付每月CPF LIFE入息。", "ms": "Akaun Persaraan: dibuka pada umur 55 untuk menyimpan jumlah persaraan dan membayar pencen CPF LIFE bulanan.", "ta": "ஓய்வூதிய கணக்கு: 55 வயதில் உருவாக்கப்பட்டு மாதாந்திர CPF LIFE கொடுப்பனவை வழங்குகிறது." },
+    { "term": "CPF LIFE", "plainEnglish": "A national scheme that pays you a monthly amount for as long as you live, from age 65.", "zh": "CPF LIFE：全国终身入息计划，从65岁起每月发放，直到终老。", "ms": "CPF LIFE: skim kebangsaan yang membayar pencen bulanan seumur hidup, bermula umur 65.", "ta": "CPF LIFE: 65 வயதிலிருந்து வாழ்நாள் முழுவதும் மாதாந்திர கொடுப்பனவு வழங்கும் தேசிய திட்டம்." },
+    { "term": "Basic Retirement Sum (BRS)", "plainEnglish": "The lowest retirement sum target, giving basic monthly payouts; can be met partly with a property pledge.", "zh": "基本退休存款：最低的退休存款目标，提供基本每月入息；可用房产抵押部分满足。", "ms": "Jumlah Persaraan Asas: sasaran terendah yang memberi pencen bulanan asas.", "ta": "அடிப்படை ஓய்வூதிய தொகை: அடிப்படை மாதாந்திர கொடுப்பனவை வழங்கும் குறைந்தபட்ச இலக்கு." },
+    { "term": "Full Retirement Sum (FRS)", "plainEnglish": "Double the Basic Retirement Sum, giving higher monthly payouts for life.", "zh": "全额退休存款：基本退休存款的两倍，提供更高的终身每月入息。", "ms": "Jumlah Persaraan Penuh: dua kali Jumlah Persaraan Asas, pencen bulanan lebih tinggi.", "ta": "முழு ஓய்வூதிய தொகை: அடிப்படை தொகையின் இரட்டிப்பு, அதிக மாதாந்திர கொடுப்பனவு." },
+    { "term": "Enhanced Retirement Sum (ERS)", "plainEnglish": "Four times the Basic Retirement Sum, for those who want the highest CPF LIFE payouts.", "zh": "增额退休存款：基本退休存款的四倍，适合想要最高入息者。", "ms": "Jumlah Persaraan Dipertingkat: empat kali Jumlah Persaraan Asas untuk pencen tertinggi.", "ta": "மேம்படுத்தப்பட்ட ஓய்வூதிய தொகை: அடிப்படை தொகையின் நான்கு மடங்கு, அதிக கொடுப்பனவுக்கு." },
+    { "term": "Basic Healthcare Sum (BHS)", "plainEnglish": "The target amount of MediSave to set aside for healthcare in old age; $79,000 in 2026.", "zh": "基本保健存款：为年老医疗预留的保健储蓄目标，2026年为79,000元。", "ms": "Jumlah Penjagaan Kesihatan Asas: sasaran MediSave untuk kesihatan di hari tua; $79,000 pada 2026.", "ta": "அடிப்படை சுகாதார தொகை: முதுமையில் சுகாதாரத்துக்கான மெடிசேவ் இலக்கு; 2026-ல் $79,000." },
+    { "term": "Accrued Interest", "plainEnglish": "The interest your CPF savings would have earned; must be refunded when you sell a home bought with CPF.", "zh": "应计利息：你的公积金储蓄本应赚取的利息；用公积金买的房子卖出时须连本带息退回。", "ms": "Faedah Terakru: faedah yang sepatutnya diperoleh simpanan CPF; mesti dipulangkan apabila menjual rumah.", "ta": "சேர்ந்த வட்டி: உங்கள் CPF சேமிப்பு ஈட்டியிருக்கும் வட்டி; வீட்டை விற்கும்போது திரும்பச் செலுத்த வேண்டும்." },
+    { "term": "CPF Nomination", "plainEnglish": "Choosing who receives your CPF savings after you pass away, and how much.", "zh": "公积金提名：选择你身故后谁能领取你的公积金存款及金额。", "ms": "Penamaan CPF: memilih siapa menerima simpanan CPF anda selepas anda meninggal.", "ta": "CPF நியமனம்: நீங்கள் இறந்த பிறகு உங்கள் CPF சேமிப்பை யார் பெறுவது என்பதைத் தேர்வு செய்தல்." },
+    { "term": "MediShield Life", "plainEnglish": "Basic lifelong health insurance for large hospital bills and costly treatments.", "zh": "终身健保：用于大额住院和昂贵治疗的基本终身健康保险。", "ms": "MediShield Life: insurans kesihatan asas seumur hidup untuk bil hospital besar.", "ta": "மெடிஷீல்டு லைஃப்: பெரிய மருத்துவமனை செலவுகளுக்கான அடிப்படை வாழ்நாள் காப்பீடு." },
+    { "term": "CareShield Life", "plainEnglish": "Long-term care insurance giving monthly cash payouts if you become severely disabled.", "zh": "终身护保：若严重失能可获每月现金入息的长期护理保险。", "ms": "CareShield Life: insurans penjagaan jangka panjang dengan pencen bulanan jika hilang upaya teruk.", "ta": "கேர்ஷீல்டு லைஃப்: கடுமையான இயலாமை ஏற்பட்டால் மாதாந்திர பணம் வழங்கும் நீண்டகால காப்பீடு." },
+    { "term": "Payout Eligibility Age", "plainEnglish": "The age your CPF monthly payouts can start — currently 65.", "zh": "入息领取年龄：可开始领取每月公积金入息的年龄，目前为65岁。", "ms": "Umur Kelayakan Pencen: umur pencen bulanan CPF boleh bermula — kini 65 tahun.", "ta": "கொடுப்பனவு தகுதி வயது: CPF மாதாந்திர கொடுப்பனவு தொடங்கும் வயது — தற்போது 65." },
+    { "term": "Contribution Rate", "plainEnglish": "The share of your wages that you and your employer put into CPF each month.", "zh": "缴交率：你和雇主每月存入公积金的工资比例。", "ms": "Kadar Caruman: bahagian gaji yang anda dan majikan masukkan ke CPF setiap bulan.", "ta": "பங்களிப்பு விகிதம்: ஒவ்வொரு மாதமும் நீங்களும் முதலாளரும் CPF-ல் சேர்க்கும் ஊதியப் பங்கு." },
+    { "term": "CPF Salary Ceiling", "plainEnglish": "The monthly wage limit above which CPF contributions are not required; $8,000 from 2026.", "zh": "公积金薪金顶限：超过此每月薪金不需缴交公积金；2026年起为8,000元。", "ms": "Siling Gaji CPF: had gaji bulanan di mana caruman CPF tidak diperlukan; $8,000 dari 2026.", "ta": "CPF சம்பள உச்சவரம்பு: இதற்கு மேல் CPF பங்களிப்பு தேவையில்லை; 2026 முதல் $8,000." },
+    { "term": "Retirement Sum Topping-Up (RSTU)", "plainEnglish": "Voluntarily adding cash to your or a loved one's retirement savings, possibly for tax relief.", "zh": "退休存款填补计划：自愿为自己或亲人增加退休存款，或可享税务减免。", "ms": "Penambahan Jumlah Persaraan: menambah tunai ke simpanan persaraan secara sukarela.", "ta": "ஓய்வூதிய தொகை நிரப்புதல்: உங்கள் அல்லது அன்புக்குரியவரின் ஓய்வூதிய சேமிப்பை தானாக அதிகரித்தல்." },
+    { "term": "Home Protection Scheme (HPS)", "plainEnglish": "Mortgage insurance that pays off your HDB loan if you die or become permanently disabled.", "zh": "房屋保障计划：若身故或永久失能，可偿还你的组屋贷款的房贷保险。", "ms": "Skim Perlindungan Rumah: insurans yang melangsaikan pinjaman HDB jika anda meninggal atau hilang upaya.", "ta": "வீட்டு பாதுகாப்பு திட்டம்: இறப்பு அல்லது நிரந்தர இயலாமையின்போது HDB கடனை அடைக்கும் காப்பீடு." },
+    { "term": "Silver Support Scheme", "plainEnglish": "Extra quarterly cash for eligible seniors who earned less during their working years.", "zh": "乐龄补贴计划：为工作期间收入较低的合格年长者提供额外季度现金。", "ms": "Skim Sokongan Silver: tunai suku tahunan tambahan untuk warga emas berpendapatan rendah.", "ta": "சில்வர் சப்போர்ட் திட்டம்: குறைந்த வருமானம் ஈட்டிய தகுதியான முதியோருக்கு கூடுதல் காலாண்டு பணம்." },
+    { "term": "Singpass", "plainEnglish": "Singapore's trusted digital login used to access CPF and other government services online.", "zh": "Singpass：新加坡可信的数码登录，用于在线访问公积金等政府服务。", "ms": "Singpass: log masuk digital dipercayai Singapura untuk akses CPF dan perkhidmatan kerajaan.", "ta": "Singpass: CPF மற்றும் அரசு சேவைகளை அணுக சிங்கப்பூரின் நம்பகமான டிஜிட்டல் உள்நுழைவு." }
+  ]
+}

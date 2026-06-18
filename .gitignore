@@ -5,4 +5,17 @@ frontend/node_modules/
 frontend/.next/
 *.log
 .DS_Store
+<<<<<<< HEAD
 coverage/
+=======
+coverage/
+
+# Local data artifacts (generated). Keep data/cpf-knowledge.json (the seed source).
+data/pulse-customers.db
+data/pulse-customers.db-wal
+data/pulse-customers.db-shm
+data/docstore/
+
+# Deploy archives
+*.tar.gz
+>>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff

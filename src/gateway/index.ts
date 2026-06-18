@@ -19,11 +19,23 @@ import { notificationRoutes } from "../services/notification/routes.js";
 import { proxyRoutes } from "../services/proxy/routes.js";
 import { analyticsRoutes } from "../services/analytics/routes.js";
 import { billingRoutes } from "../services/billing/routes.js";
+<<<<<<< HEAD
 import { runMainAgent } from "../agents/main/agent.js";
 import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
 import type { ApiResponse } from "../shared/types/index.js";
 import type { Request, Response } from "express";
+=======
+import { adaptiveLocalRoutes } from "../services/adaptive-local/index.js";
+import { consoleRoutes } from "../services/console/routes.js";
+import { copilotRoutes } from "../services/copilot/routes.js";
+import { agentRoutes } from "../agents/orchestrator/routes.js";
+import { chatbotRoutes } from "../services/chatbot/routes.js";
+import { messagingRoutes } from "../services/messaging/routes.js";
+import { officerRoutes } from "../services/officer/routes.js";
+import { startMessaging } from "../services/messaging/index.js";
+import { handleInboundMessage } from "../services/messaging/inbound.js";
+>>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
 
 dotenv.config();
 
@@ -105,6 +117,7 @@ app.use("/api/v1/proxy",          requireAuth, proxyRoutes);
 app.use("/api/v1/analytics",      requireAuth, analyticsRoutes);
 app.use("/api/v1/billing",        requireAuth, billingRoutes);
 
+<<<<<<< HEAD
 // WhatsApp inbound webhook — unauthenticated (Twilio signs requests instead)
 app.use("/webhook", webhookRoutes);
 
@@ -232,6 +245,17 @@ app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
   );
   res.json({ data: result });
 });
+=======
+app.use("/api/v1/adaptive-local", adaptiveLocalRoutes);
+app.use("/api/v1/console", consoleRoutes);
+app.use("/api/v1/copilot", copilotRoutes);
+app.use("/api/v1/agents", agentRoutes);
+>>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
+
+// Integrated chatbot + escalation messaging + CCU officer console.
+app.use("/api/v1/chatbot", chatbotRoutes);
+app.use("/api/v1/messaging", messagingRoutes);
+app.use("/api/v1/officer", officerRoutes);
 
 app.use(errorHandler);
 
@@ -243,6 +267,13 @@ startQueueRefreshTimer();
 
 server.listen(PORT, () => {
   log.info({ port: PORT, env: process.env.NODE_ENV }, "PULSE Gateway started");
+
+  // Start the active messaging channel (Telegram long-polling in dev). This lets
+  // citizens chat with the integrated bot over Telegram and receive officer
+  // replies on the same channel. Failures here never take the gateway down.
+  startMessaging(handleInboundMessage).catch((error) => {
+    log.error({ err: (error as Error).message }, "Failed to start messaging channel");
+  });
 });
 
 export { app, server };

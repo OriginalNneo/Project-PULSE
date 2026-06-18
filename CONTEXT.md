@@ -402,14 +402,136 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | Frontend page routing | Scaffolded | `frontend/src/app/**/page.tsx` (9 pages) |
 | Shared types & errors | Built | `src/shared/types/`, `src/shared/errors.ts`, `src/shared/logger.ts` |
 | Middleware (auth, rate limit, tracing) | Built | `src/shared/middleware/` |
-| Database schemas | Not started | — |
+| Database schemas | Built (vertical slice) | `src/data/sqlite/schema.ts`, `src/data/docstore/` |
+| Customer SQL store (SQLite) | Built — 150+ seeded personas | `src/data/customers/`, `src/scripts/personas.ts` |
+| CPF knowledge store (MongoDB/file) | Built — live-fetched from cpf.gov.sg | `data/cpf-knowledge.json`, `src/data/knowledge/` |
+| AI copilot (z.ai GLM, RAG) | Built | `src/services/ai/`, `src/services/copilot/` |
+| Data & AI Console (frontend) | Built | `frontend/src/app/console/`, `frontend/src/lib/console/` |
+| Adaptive-local service | Built | `src/services/adaptive-local/` (auth, friction, sessions, telemetry, CSO alerts, Hermes stub) |
+| Shared contracts | Built | `src/shared/contracts/` (AI payload, escalation, friction, identity, telemetry, UI profile, validation) |
+| Testing harness | Built | `src/testing/pulseTestHarness.ts`, `tests/` (contracts, CSO alerts, telemetry, Hermes boundary, UI profile) |
+| Deploy kit | Built | `deploy/` (Caddyfile, ecosystem.config.cjs, setup-vps.sh), `DEPLOY.md` |
 | Domain agent knowledge bases | Not started | `src/agents/domain/*/knowledge/` |
 | Language glossaries | Not started | `src/agents/language/*/glossaries/` |
 | Dialect glossaries | Not started | `src/agents/dialect/*/*/glossaries/` |
 | External adapters (Singpass, Twilio, SingPost) | Not started | `src/adapters/` |
 | CI/CD pipeline | Not started | `.github/workflows/` |
 | Infrastructure as Code | Not started | `infra/` |
-| Tests | Not started | `tests/` |
+
+---
+
+## Live Data Layer & AI Console (Vertical Slice)
+
+A runnable DB → AI → UI slice was added on top of the scaffolding. It shows how the back end stores data, how new records are keyed in, how cases are brought up, and how the AI navigates the data in natural language.
+
+### Two databases (per the architecture doc)
+
+| Store | Tech | Holds | Code |
+| :--- | :--- | :--- | :--- |
+| **Customer / identity** | SQLite (`better-sqlite3`) | Members, CPF accounts (OA/SA/MA/RA), vulnerability markers, correspondence cases + case events | `src/data/sqlite/`, `src/data/customers/` |
+| **CPF knowledge / documents** | MongoDB (Atlas) with **embedded file fallback** | CPF sections, ~31 knowledge documents, terminology — live-fetched from cpf.gov.sg | `src/data/docstore/`, `src/data/knowledge/` |
+
+The document store is an adapter (`DocumentStore`): `DOC_STORE_BACKEND=mongo` uses Atlas (`MONGODB_URI`) and **auto-falls back to the file store** if the cluster is unreachable, so the stack always runs. SQLite = the "Azure SQL" equivalent; Mongo = the "Cosmos DB" equivalent.
+
+### Seed data
+
+`npm run db:seed` generates **~150 representative Singaporean members** (realistic ethnic name mix, ages skewed toward the seniors PULSE serves, dialects, employment, age-appropriate CPF balances, vulnerability markers, support tiers) and **189+ correspondence cases** with timelines. It also loads `data/cpf-knowledge.json` into the document store. Deterministic (seeded RNG) so reseeds are stable. `SEED_COUNT=200 npm run db:seed` to change the count.
+
+### AI copilot (RAG)
+
+- **LLM client** (`src/services/ai/llmClient.ts`): provider-agnostic, OpenAI-compatible. Defaults to **z.ai GLM** (`LLM_BASE_URL=https://api.z.ai/api/coding/paas/v4`, `LLM_MODEL=glm-4.6`). Key in `.env` as `LLM_API_KEY`.
+- **Copilot service** (`src/services/copilot/service.ts`): natural-language question → searches the CPF knowledge store → optionally loads the selected member from SQLite → builds a grounded, data-minimised prompt → returns the answer, **citations** (linking to cpf.gov.sg), a **navigation trace** (the steps the AI took across both DBs), and the member context used. Falls back to a deterministic grounded answer if the LLM is unavailable. Never invents CPF figures; warns about scams; never asks for passwords/OTP.
+
+### Frontend: `/console` (Data & AI Console)
+
+`frontend/src/app/console/page.tsx` — browse/search/filter the customer DB, open a member to see CPF accounts + markers + cases (expandable timelines), **key in a new member** (system derives tier/markers/CPF account), browse the CPF knowledge DB, and chat with the AI copilot (with citations + the live navigation trace). Linked in the top nav as **Data & AI**.
+
+### Backend endpoints
+
+```text
+GET   /api/v1/console/stats                 # dashboard counts (customers, cases, knowledge, AI status)
+GET   /api/v1/console/customers?search&ageBracket&tier
+GET   /api/v1/console/customers/:id
+POST  /api/v1/console/customers             # key in a new member
+GET   /api/v1/console/cases?status&category&priority&search
+GET   /api/v1/console/cases/:id
+POST  /api/v1/console/cases                 # open a case for a member
+POST  /api/v1/console/cases/:id/events      # append to a case
+PATCH /api/v1/console/cases/:id/status
+GET   /api/v1/console/knowledge             # sections + documents + terminology
+GET   /api/v1/console/knowledge/search?q=
+POST  /api/v1/copilot/chat                  # { question, userId?, history? }
+```
+
+### How to run
+
+```bash
+npm install                 # installs better-sqlite3, mongodb, etc.
+# put LLM_API_KEY (and optionally MONGODB_URI) in .env  — see .env.example
+npm run db:seed             # creates SQLite schema, seeds 150 members + CPF knowledge
+npm run dev                 # backend :3000 + frontend :3001  → open http://localhost:3001/console
+```
+
+New env vars (see `.env.example`): `SQLITE_PATH`, `DOC_STORE_BACKEND`, `DOC_STORE_PATH`, `MONGODB_URI`, `MONGODB_DB`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_MS`.
+
+---
+
+## Integrated Chatbot, Messaging Escalation & CCU Officer Console
+
+The "Open Integrated ChatBot" node from the system diagram, built as three swappable, modular subsystems. Citizens chat on the CPF website, CPF app, or a messaging channel; SIMPLE requests are answered inline (grounded in MongoDB CPF knowledge); COMPLEX/private/unique requests escalate to a Customer Correspondence Unit (CCU) officer who replies from a local dashboard, delivered back over the citizen's channel.
+
+### Swappable subsystems (config-driven, no code change to switch)
+
+| Subsystem | Interface | Active now | Swap to | Flag |
+| :--- | :--- | :--- | :--- | :--- |
+| **AI provider** | `AiProvider` (`src/services/ai/providers/`) | **z.ai GLM** (real, MongoDB-grounded) | **Hermes.AI** (placeholder until VPS endpoint wired) | `AI_PROVIDER=zai\|hermes` |
+| **Messaging channel** | `MessagingChannel` (`src/services/messaging/`) | **Telegram** (real, long-polling) | **WhatsApp** (Cloud API stub) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
+
+All config lives in one typed loader: `src/config/integration.ts` (reads `.env`).
+
+### Flow
+
+```
+Citizen (web / app / Telegram)
+  → POST /api/v1/chatbot/message  →  ChatbotService
+      → retrieve CPF knowledge (MongoDB)  →  analyse (emotion / confidence / urgency / complexity)
+      → SIMPLE   → AiProvider answers (z.ai GLM) — deterministic grounded fallback if no key
+      → COMPLEX  → EscalationService → persist to MongoDB + notify officer channel
+                     → CCU Officer Console (/officer) → officer reply → MessagingChannel → citizen
+```
+
+The chatbot's per-turn analysis (emotion, confidence %, urgency) drives the CPF Queries Dashboard cards. Conversation + AI context window persist in the document store (`chat_sessions`, `cso_escalations` collections), so the officer sees full context on pickup.
+
+### New collections (document store)
+
+`chat_sessions` — chatbot conversations + context window. `cso_escalations` — escalations surfaced to the CCU.
+
+### Backend endpoints
+
+```text
+# Integrated chatbot (web / app / messaging all enter here)
+GET   /api/v1/chatbot/health                 # active AI provider + messaging channel + readiness
+POST  /api/v1/chatbot/message                # { message, channel?, sessionId?, memberId?, ... }
+GET   /api/v1/chatbot/session/:sessionId
+
+# Messaging channel (Telegram polls automatically; webhook for prod/WhatsApp)
+GET   /api/v1/messaging/health
+GET   /api/v1/messaging/webhook              # WhatsApp verification handshake
+POST  /api/v1/messaging/webhook              # inbound push (prod)
+
+# CCU officer console (the local dashboard)
+GET   /api/v1/officer/dashboard              # stats + open/inactive chats + incoming queries rail
+GET   /api/v1/officer/conversation/:sessionId
+POST  /api/v1/officer/conversation/:sessionId/reply    # { officer, message } → delivered to citizen
+POST  /api/v1/officer/conversation/:sessionId/close
+POST  /api/v1/officer/escalations/:escalationId/acknowledge
+```
+
+### Frontend: `/officer` (CPF Queries Dashboard)
+
+`frontend/src/app/officer/page.tsx` — the CCU officer console: live stat cards (open chats, incoming, avg response, resolved today), Open Chats grid (emotion chip + confidence bar + urgency dot), Incoming Queries rail, Inactive Chats, and a conversation drawer with the AI context window + a reply box that sends back over Telegram/WhatsApp. Polls every 4s. Linked in the top nav as **CCU Dashboard**.
+
+New env vars: `AI_PROVIDER`, `HERMES_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`, `MESSAGING_CHANNEL`, `TELEGRAM_MODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OFFICER_CHAT_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`.
 
 ---
 
@@ -420,3 +542,27 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | [README.md](./README.md) | Full project documentation — pillars, architecture, setup, contributing |
 | [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md) | Complete AI agent system specification — agents, communication, OpenClaw integration, safety |
 | [CONTEXT.md](./CONTEXT.md) | This file — consolidated quick reference |
+| [DEPLOY.md](./DEPLOY.md) | VPS deployment guide — Caddy reverse proxy, PM2 ecosystem, setup script |
+| [adaptive-service-architecture-documentation.md](./adaptive-service-architecture-documentation.md) | Adaptive service architecture deep-dive — friction, telemetry, CSO alerts, Hermes integration |
+
+---
+
+## Hermes Coding Agent
+
+Hermes is a coding agent (NousResearch/hermes-agent) running on this VPS, accessible via Telegram (@SDS_Pulse_Bot). Its sole purpose is to build, edit, and modify code within this project directory.
+
+- **Install location**: `/nat/hermes-agent/` (installed directly, not Docker)
+- **Config home**: `~/.hermes/` (SOUL.md, config.yaml, .env, gateway logs)
+- **Scope**: Only `/nat/Project-PULSE/` — reads, writes, builds, tests within this directory
+- **Access**: Telegram bot (@SDS_Pulse_Bot), gateway runs as systemd user service
+- **LLM**: Z.AI GLM-4.5-flash via `https://api.z.ai/api/coding/paas/v4`
+- **SOUL.md**: Defines Hermes as a coding agent that builds PULSE features end-to-end and escalates to the developer on ambiguity/blockers
+
+### Gateway Management
+
+```bash
+hermes gateway status                # check if running
+hermes gateway restart              # restart after config changes
+tail -f ~/.hermes/logs/gateway.log  # view live logs
+hermes gateway run                  # run in foreground (for debugging)
+```

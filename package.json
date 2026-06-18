@@ -19,9 +19,15 @@
     "test:watch": "vitest",
     "test:a11y": "cd frontend && npm run test:a11y",
     "db:migrate": "tsx src/scripts/migrate.ts",
-    "db:seed": "tsx src/scripts/seed.ts"
+    "db:seed": "tsx src/scripts/seed.ts",
+    "start:backend": "tsx src/gateway/index.ts",
+    "start:frontend": "cd frontend && npx next start -p 3001"
   },
   "dependencies": {
+<<<<<<< HEAD
+=======
+    "better-sqlite3": "^12.10.0",
+>>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -30,6 +36,7 @@
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
+<<<<<<< HEAD
     "mongodb": "^6.3.0",
     "pg": "^8.12.0",
     "pino": "^8.17.2",
@@ -38,13 +45,26 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+=======
+    "mongodb": "^7.2.0",
+    "pg": "^8.12.0",
+    "pino": "^8.17.2",
+    "pino-http": "^9.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+>>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
     "@types/cookie-parser": "^1.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
+<<<<<<< HEAD
     "@types/ws": "^8.5.12",
+=======
+>>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
     "concurrently": "^8.2.2",
     "eslint": "^8.56.0",
     "tsx": "^4.7.0",
