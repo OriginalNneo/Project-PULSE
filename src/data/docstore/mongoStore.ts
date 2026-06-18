@@ -34,15 +34,6 @@ export async function createMongoStore(uri: string, dbName: string): Promise<Doc
     async count(collection: string): Promise<number> {
       return db.collection(collection).countDocuments();
     },
-    async findOne<T>(collection: string, filter: Record<string, unknown>): Promise<T | null> {
-      return (await db.collection(collection).findOne(filter, { projection: { _id: 0 } })) as T | null;
-    },
-    async upsert<T>(collection: string, filter: Record<string, unknown>, doc: T): Promise<T> {
-      await db
-        .collection(collection)
-        .replaceOne(filter, doc as Record<string, unknown>, { upsert: true });
-      return doc;
-    },
     async close(): Promise<void> {
       await client.close();
     },

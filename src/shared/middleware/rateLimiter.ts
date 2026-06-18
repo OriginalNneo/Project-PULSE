@@ -8,34 +8,26 @@ interface RateLimitEntry {
 
 const store = new Map<string, RateLimitEntry>();
 
-/**
- * Limits are read lazily (per request) so values set in .env apply even though
- * dotenv loads after this module is imported. All are overridable via env.
- *
- * NOTE: this middleware runs before route-level auth, so most traffic is seen
- * as "anonymous". The anonymous default is therefore set high enough for an
- * interactive SPA + chat console, while still bounding abuse.
- */
-function envInt(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
+const WINDOW_MS = 60_000;
 
-function windowMs(): number {
-  return envInt("RATE_LIMIT_WINDOW_MS", 60_000);
-}
+const LIMITS: Record<"anonymous" | "authenticated" | "service" | "admin", number> = {
+    anonymous: parseInt(process.env.RATE_LIMIT_ANONYMOUS ?? "", 10) || 10,
+    authenticated: parseInt(process.env.RATE_LIMIT_AUTHENTICATED ?? "", 10) || 100,
+  service: 1000,
+  admin: 500,
+};
 
 function getKey(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
-  const ip = typeof forwarded === "string" ? (forwarded.split(",")[0]?.trim() ?? "unknown") : req.ip ?? "unknown";
+  const ip = typeof forwarded === "string" ? forwarded.split(",")[0] : req.ip ?? "unknown";
   return `${ip}:${req.auth?.userId ?? "anon"}`;
 }
 
 function getLimit(req: Request): number {
-  if (!req.auth) return envInt("RATE_LIMIT_ANONYMOUS", 300);
-  if (req.auth.roles.includes("admin")) return envInt("RATE_LIMIT_ADMIN", 600);
-  if (req.auth.roles.includes("service")) return envInt("RATE_LIMIT_SERVICE", 1000);
-  return envInt("RATE_LIMIT_AUTHENTICATED", 600);
+  if (!req.auth) return LIMITS.anonymous;
+  if (req.auth.roles.includes("admin")) return LIMITS.admin;
+  if (req.auth.roles.includes("service")) return LIMITS.service;
+  return LIMITS.authenticated;
 }
 
 export function rateLimiter(req: Request, res: Response, next: NextFunction) {
@@ -46,7 +38,7 @@ export function rateLimiter(req: Request, res: Response, next: NextFunction) {
   let entry = store.get(key);
 
   if (!entry || now > entry.resetAt) {
-    entry = { count: 1, resetAt: now + windowMs() };
+    entry = { count: 1, resetAt: now + WINDOW_MS };
     store.set(key, entry);
   } else {
     entry.count++;

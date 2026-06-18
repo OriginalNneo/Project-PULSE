@@ -57,6 +57,7 @@ export default function OfficerPage() {
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -74,6 +75,27 @@ export default function OfficerPage() {
     void refresh();
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
+  }, [refresh]);
+
+  // Live push from Davin's backend WebSocket — instant refresh on queue/emotion events
+  useEffect(() => {
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const host = location.protocol === "https:" ? location.host : `${location.hostname}:3000`;
+      const ws = new WebSocket(`${proto}//${host}/dashboard/ws`);
+      ws.onmessage = (ev) => {
+        try {
+          const { type } = JSON.parse(ev.data) as { type: string };
+          if (["emotion_update","new_queue_entry","queue_updated","case_resolved","officer_assigned","officer_message","user_message"].includes(type)) {
+            void refresh();
+          }
+        } catch { /* ignore */ }
+      };
+      ws.onclose = () => { wsRef.current = null; setTimeout(connect, 3000); };
+      wsRef.current = ws;
+    }
+    connect();
+    return () => wsRef.current?.close();
   }, [refresh]);
 
   const stats = data?.stats;

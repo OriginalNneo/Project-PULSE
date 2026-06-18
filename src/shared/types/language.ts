@@ -1,4 +1,4 @@
-export type Language = "en" | "zh" | "ms" | "ta";
+export type Language = "en" | "zh" | "ms" | "ta" | "hi" | "ml" | "pa";
 
 export type ChineseDialect = "zh-hok" | "zh-can" | "zh-teo" | "zh-hak" | "zh-hai";
 export type MalayVariety = "ms-bms" | "ms-joh" | "ms-boy" | "ms-jav";
