@@ -57,7 +57,7 @@ export async function runTranslatorSubagent(
     if (state.blocked) {
       log.warn({ toolName, reason: state.blockReason }, "Guardian blocked translator output");
       return {
-        text: "Your message could not be processed. Please rephrase or contact the CPF hotline at 1800-227-1188.",
+        text: "Your message could not be processed. Would you like me to connect you to a CPF officer for assistance? Reply *Officer* if yes.",
         detectedLanguage: state.detectedLanguage,
         blocked: true,
         blockReason: state.blockReason,

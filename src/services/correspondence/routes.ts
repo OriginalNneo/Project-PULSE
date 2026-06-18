@@ -1,12 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { NotFoundError, ValidationError } from "../../shared/errors.js";
-<<<<<<< HEAD
 import type { ApiResponse, PaginatedResponse, Correspondence } from "../../shared/types/index.js";
 import type { AuthenticatedRequest } from "../../shared/types/index.js";
-=======
-import type { ApiResponse, Correspondence, PaginatedResponse } from "../../shared/types/index.js";
->>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
 
 const router = Router();
 

@@ -3,13 +3,12 @@
   "version": "0.1.0",
   "description": "PULSE — People-centric Framework for Correspondence",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run py:transcriber\" \"npm run py:translator\"",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "tsx watch src/gateway/index.ts",
     "dev:frontend": "cd frontend && npm run dev",
-    "py:transcriber": "cd src/python-bridge && uvicorn transcriber:app --port 5001 --reload",
-    "py:translator": "cd src/python-bridge && uvicorn translator:app --port 5002 --reload",
-    "py": "concurrently \"npm run py:transcriber\" \"npm run py:translator\"",
+    "dev:telegram": "tsx watch src/adapters/telegram/poller.ts",
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "tsc -p tsconfig.json",
     "build:frontend": "cd frontend && npm run build",
@@ -24,20 +23,18 @@
     "start:frontend": "cd frontend && npx next start -p 3001"
   },
   "dependencies": {
-<<<<<<< HEAD
-=======
-    "better-sqlite3": "^12.10.0",
->>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
+    "better-sqlite3": "^12.11.1",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-async-errors": "^3.1.1",
     "helmet": "^7.1.0",
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
-<<<<<<< HEAD
     "mongodb": "^6.3.0",
+    "msedge-tts": "^2.0.5",
     "pg": "^8.12.0",
     "pino": "^8.17.2",
     "pino-http": "^9.0.0",
@@ -45,26 +42,14 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-=======
-    "mongodb": "^7.2.0",
-    "pg": "^8.12.0",
-    "pino": "^8.17.2",
-    "pino-http": "^9.0.0",
-    "zod": "^3.22.4"
-  },
-  "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
->>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
     "@types/cookie-parser": "^1.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
-<<<<<<< HEAD
     "@types/ws": "^8.5.12",
-=======
->>>>>>> bbbcd6a0ad6287fddd6d91b59aed624801f9dbff
     "concurrently": "^8.2.2",
     "eslint": "^8.56.0",
     "tsx": "^4.7.0",

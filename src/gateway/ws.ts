@@ -10,8 +10,9 @@ export type WsEventName =
   | "officer_assigned"
   | "case_resolved"
   | "officer_status_change"
-  | "user_message"      // inbound WhatsApp user message relayed to dashboard during escalation
-  | "officer_message";  // outbound officer message echoed to all dashboard tabs
+  | "user_message"
+  | "officer_message"
+  | "emotion_update";   // fired per inbound message with live emotion score
 
 export interface WsMessage {
   event: WsEventName;

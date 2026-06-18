@@ -78,7 +78,7 @@ export async function runMainAgent(
 ): Promise<MainAgentResponse> {
   const prefs = await getUserPrefs(ctx.userId).catch(() => null);
   const targetLanguage: Language =
-    (request.type !== "detect" ? request.targetLanguage : undefined) ??
+    (request.type === "transcribe" || request.type === "translate" ? request.targetLanguage : undefined) ??
     (prefs?.preferred_lang as Language | undefined) ??
     "en";
   const speechRate: number = prefs?.speech_rate ?? 1.0;

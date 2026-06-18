@@ -32,17 +32,17 @@ export const PERSONAL_DATA_KEYWORDS: ReadonlySet<string> = new Set([
 ]);
 
 export const PIPELINE_SERVICE: QueryToolName[] = [
-  "service_lookup", "validate_output", "format_response",
+  "service_lookup", "validate_output",
 ];
 
 export const PIPELINE_NAVIGATE: QueryToolName[] = [
-  "hyperlink_lookup", "cpf_navigate", "validate_output", "format_response",
+  "hyperlink_lookup", "cpf_navigate", "validate_output",
 ];
 
 export const PIPELINE_GENERAL: QueryToolName[] = [
-  "cpf_search", "validate_output", "format_response",
+  "cpf_search", "validate_output",
 ];
 
 export const PIPELINE_PERSONAL_DATA: QueryToolName[] = [
-  "validate_output", "format_response",
+  "validate_output",
 ];

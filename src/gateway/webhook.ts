@@ -1,12 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { runTranscriberAgent } from "../agents/transcriber-agent/agent.js";
-import { runQueryAgent } from "../agents/query/agent.js";
-import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue } from "../db/proxy-client.js";
 import { sendWhatsAppMessage, verifyTwilioSignature } from "../adapters/twilio/client.js";
-import { translateText } from "../python-bridge/client.js";
-import { notifyNewQueueEntry } from "../dashboard/notify.js";
-import { broadcast } from "./ws.js";
+import { processInbound, type InboundChannel } from "./inbound.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("webhook");
@@ -36,127 +31,15 @@ async function handleInbound(req: Request): Promise<void> {
     }
   }
 
-  const fromRaw = body["From"] ?? "";           // whatsapp:+6512345678
+  const phoneNumber = (body["From"] ?? "").replace("whatsapp:", "");   // whatsapp:+6512345678
   const messageText = (body["Body"] ?? "").trim();
-  const phoneNumber = fromRaw.replace("whatsapp:", "");
-
   if (!phoneNumber || !messageText) return;
 
-  const userId = `wa:${phoneNumber}`;
-  const sessionId = `wa:${phoneNumber}:${Date.now()}`;
-
-  log.info({ userId }, "Inbound WhatsApp message");
-
-  // Fetch or create user prefs
-  let prefs = await getUserPrefs(userId).catch(() => null);
-  if (!prefs) {
-    prefs = {
-      userId,
-      preferred_lang: "en",
-      voice_enabled: false,
-      speech_rate: 1.0,
-      accessibility_mode: "standard",
-    };
-    await upsertUserPrefs(prefs).catch(() => null);
-  }
-
-  // If user already has an active queue entry, relay to officer
-  const queue = await getQueue().catch(() => null);
-  const activeEntry = queue?.find(
-    (e) => e.userId === userId && (e.status === "waiting" || e.status === "assigned"),
-  );
-
-  if (activeEntry) {
-    await relayUserMessageToOfficer(activeEntry.queueId, userId, messageText, prefs.preferred_lang);
-    await sendWhatsAppMessage(phoneNumber, "Message received — an officer will reply shortly.").catch(() => null);
-    return;
-  }
-
-  // Run transcriber (normalise + detect language)
-  const transcriberResult = await runTranscriberAgent(
-    { mode: "text", text: messageText, responseFormat: "text" },
-    { userId, tenantId: "cpf", vulnerabilityTier: "self-service" },
-  ).catch(() => null);
-
-  const englishText = transcriberResult?.content || messageText;
-
-  // Run query agent
-  const queryResult = await runQueryAgent(
-    [{ role: "user", content: englishText, timestamp: new Date().toISOString() }],
-    {
-      userId,
-      tenantId: "cpf",
-      vulnerabilityTier: "self-service",
-      language: prefs.preferred_lang as "en" | "zh" | "ms" | "ta",
-    },
-  );
-
-  if (queryResult.requiresHumanReview) {
-    await escalateToQueue(userId, sessionId, messageText, queryResult.content, phoneNumber, prefs.preferred_lang);
-  } else {
-    let reply = queryResult.content;
-    if (prefs.preferred_lang !== "en") {
-      const t = await translateText(reply, "en", prefs.preferred_lang).catch(() => null);
-      if (t) reply = t.translated_text;
-    }
-    await sendWhatsAppMessage(phoneNumber, reply).catch((err: unknown) => {
-      log.error(err, "Failed to send WhatsApp reply");
-    });
-  }
-}
-
-async function relayUserMessageToOfficer(
-  queueId: string,
-  userId: string,
-  messageText: string,
-  userLang: string,
-): Promise<void> {
-  let englishText = messageText;
-  if (userLang !== "en") {
-    const t = await translateText(messageText, userLang, "en").catch(() => null);
-    if (t) englishText = t.translated_text;
-  }
-
-  broadcast("user_message", {
-    queueId,
-    userId,
-    message: englishText,
-    original_message: messageText,
-    original_lang: userLang,
-    ts: new Date().toISOString(),
-  });
-}
-
-async function escalateToQueue(
-  userId: string,
-  sessionId: string,
-  userMessage: string,
-  botSummary: string,
-  phoneNumber: string,
-  preferredLang: string,
-): Promise<void> {
-  const entry = await postToQueue({
-    sessionId,
-    userId,
-    emotion_score: 50,
-    emotion_label: "neutral",
-    summary: botSummary,
-    chat_history: [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
-    preferred_lang: preferredLang,
-    dialect_hint: null,
-  }).catch(() => null);
-
-  if (entry) {
-    notifyNewQueueEntry(entry.queueId, entry.emotion_label, entry.priority_score);
-    log.info({ queueId: entry.queueId, userId }, "WhatsApp user escalated to queue");
-  }
-
-  let interim = "You're being connected to a CPF officer. Please hold on — they'll be with you shortly.";
-  if (preferredLang !== "en") {
-    const t = await translateText(interim, "en", preferredLang).catch(() => null);
-    if (t) interim = t.translated_text;
-  }
-  await sendWhatsAppMessage(phoneNumber, interim).catch(() => null);
+  const channel: InboundChannel = {
+    prefix: "wa",
+    send: (text) => sendWhatsAppMessage(phoneNumber, text),
+  };
+  await processInbound(channel, { userKey: phoneNumber, text: messageText });
 }
 
 export { router as webhookRoutes };
