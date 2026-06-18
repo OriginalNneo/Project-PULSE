@@ -12,7 +12,7 @@ router.get("/:principalUserId/proxies", async (req: Request, res: Response<ApiRe
 });
 
 router.post("/:principalUserId/proxies", async (req: Request, res: Response<ApiResponse<ProxyRelationship>>) => {
-  const { principalUserId } = req.params;
+  const principalUserId = req.params.principalUserId ?? "";
   const body = req.body as Partial<ProxyRelationship>;
 
   const rel: ProxyRelationship = {
