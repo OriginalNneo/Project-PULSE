@@ -1,4 +1,4 @@
-export default function DashboardPage() {
+function DashboardPage() {
   return (
     <div>
       <h1>Dashboard</h1>
@@ -19,4 +19,10 @@ export default function DashboardPage() {
       </section>
     </div>
   );
+}
+
+import CpfDashboard from '@/components/CpfDashboard';
+
+export default function Page() {
+  return <CpfDashboard />;
 }

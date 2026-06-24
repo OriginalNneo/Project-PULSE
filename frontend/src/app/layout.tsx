@@ -10,6 +10,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
+{/* <<<<<<< Updated upstream
         <a href="#main-content" className="skip-link">Skip to main content</a>
         <header role="banner">
           <nav aria-label="Main navigation">
@@ -28,7 +29,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </main>
         <footer role="contentinfo">
           <p>PULSE Framework &copy; {new Date().getFullYear()}</p>
-        </footer>
+        </footer> */}
+=======
+        {/* <a href="#main-content" className="skip-link">Skip to main content</a> */}
+        {/* <AppHeader /> */}
+        {/* <main id="main-content" role="main"> */}
+          {children}
+        {/* </main> */}
+        {/* <AppFooter /> */}
       </body>
     </html>
   );
