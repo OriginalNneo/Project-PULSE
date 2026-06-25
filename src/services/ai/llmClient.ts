@@ -43,8 +43,10 @@ export async function callHermes(
   toolResultContext: string,
   conversationHistory: HermesMessage[] = [],
   maxTokens = 1024,
+  includeSoul = true, // set false for utility tasks (e.g. summarising) that must NOT answer as PULSE
+  extraBody: Record<string, unknown> = {}, // extra request fields, e.g. { thinking: { type: "disabled" } }
 ): Promise<string> {
-  const fullSystemPrompt = SOUL_PREAMBLE
+  const fullSystemPrompt = (includeSoul && SOUL_PREAMBLE)
     ? `${SOUL_PREAMBLE}\n\n---\n\n## Agent-Specific Instructions\n\n${systemPrompt}`
     : systemPrompt;
 
@@ -72,6 +74,7 @@ export async function callHermes(
         model: HERMES_MODEL,
         messages,
         max_tokens: maxTokens,
+        ...extraBody,
       }),
     });
   } finally {

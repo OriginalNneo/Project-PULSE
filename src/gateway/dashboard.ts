@@ -28,7 +28,7 @@ export function getEmotionFeed(): EmotionEvent[] {
 export function getLatestEmotionForUser(userId: string): EmotionEvent | null {
   return _emotionRing.find((e) => e.userId === userId) ?? null;
 }
-import { getQueue, getQueueEntry, getQueueStats, resolveQueueEntry } from "../db/proxy-client.js";
+import { getQueue, getQueueEntry, getQueueStats, resolveQueueEntry, appendToQueueHistory } from "../db/proxy-client.js";
 import { setOfficerStatus, listOfficers, type OfficerStatus } from "../dashboard/officer.js";
 import { notifyCaseResolved } from "../dashboard/notify.js";
 import { broadcast } from "./ws.js";
@@ -107,6 +107,10 @@ router.post("/send/:queueId", async (req: Request, res: Response) => {
     return;
   }
 
+  // Persist the officer's message into the case history so it interleaves with the
+  // citizen's messages in chronological order on the dashboard (and survives refetch).
+  await appendToQueueHistory(req.params.queueId!, { role: "officer", content: message, ts: new Date().toISOString() });
+
   // Echo the sent message to all dashboard clients so other tabs stay in sync
   broadcast("officer_message", {
     queueId: req.params.queueId,
@@ -130,15 +134,19 @@ router.patch("/resolve/:queueId", async (req: Request, res: Response) => {
 
   notifyCaseResolved(req.params.queueId!);
 
-  // Notify user on WhatsApp that their case is resolved
-  const phoneNumber = entry.userId.startsWith("wa:") ? entry.userId.slice(3) : null;
-  if (phoneNumber) {
-    let closeMsg = "Your CPF query has been resolved. Thank you for contacting us. If you have more questions, feel free to message us again.";
-    if (entry.preferred_lang !== "en") {
-      const t = await translateText(closeMsg, "en", entry.preferred_lang).catch(() => null);
-      if (t) closeMsg = t.translated_text;
-    }
-    await sendWhatsAppMessage(phoneNumber, closeMsg).catch(() => null);
+  // Tell the citizen their chat is closed (Telegram or WhatsApp). After resolve the entry
+  // is no longer waiting/assigned, so their next message starts a fresh AI conversation.
+  let closeMsg = "✅ This chat has been closed by the officer. Type anything to start a new conversation.";
+  if (entry.preferred_lang !== "en") {
+    const t = await translateText(closeMsg, "en", entry.preferred_lang).catch(() => null);
+    if (t) closeMsg = t.translated_text;
+  }
+  if (entry.userId.startsWith("tg:")) {
+    const chatId = parseInt(entry.userId.slice(3), 10);
+    const { sendTelegramMessage } = await import("../adapters/telegram/client.js");
+    await sendTelegramMessage(chatId, closeMsg).catch(() => null);
+  } else if (entry.userId.startsWith("wa:")) {
+    await sendWhatsAppMessage(entry.userId.slice(3), closeMsg).catch(() => null);
   }
 
   res.json({ ok: true });

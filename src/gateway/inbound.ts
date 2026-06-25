@@ -2,6 +2,7 @@ import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory } from "../db/proxy-client.js";
+import { callHermes } from "../services/ai/llmClient.js";
 import { findGuidingSetForQuery } from "../data/knowledge/guiding.js";
 import { synthesizeGuidedAnswer } from "../agents/query/guidedSynthesis.js";
 import type { GuidingQuestion } from "../data/docstore/types.js";
@@ -596,13 +597,9 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     (e) => e.userId === userId && (e.status === "waiting" || e.status === "assigned"),
   );
   if (activeEntry) {
+    // Mimic the WhatsApp officer channel: relay the citizen's message straight to the
+    // officer dashboard, silently. No auto-acknowledgement — the officer replies live.
     await relayToOfficer(activeEntry.queueId, userId, messageText, lang);
-    // Only auto-acknowledge while the case is still QUEUED (no officer yet). Once an
-    // officer has picked it up (status "assigned"), relay silently — don't spam the
-    // citizen with "an officer will reply shortly" during a live officer conversation.
-    if (activeEntry.status === "waiting") {
-      await channel.send("Message received — an officer will reply shortly.").catch(() => null);
-    }
     return;
   }
 
@@ -954,6 +951,39 @@ export async function escalateUser(channel: InboundChannel, userId: string): Pro
   await doEscalate(channel, userId, sessionId, summary, "", lang, emotion, chatHistory);
 }
 
+// Generate a single-sentence "User wants to…" summary of the conversation for the
+// officer dashboard's opener. Falls back to the citizen's last message if the LLM
+// is unavailable, so escalation never blocks on the summary.
+const OFFICER_SUMMARY_PROMPT =
+  'You are a silent summariser. Read the conversation and output ONE concise sentence (max 30 words) describing what the CPF member needs help with, written for a customer service officer. Begin with "User wants" or "User is". Do NOT answer the member, do NOT greet, do NOT give advice, do NOT add links or emotion labels — output only the summary sentence.';
+
+async function summariseQueryForOfficer(
+  chatHistory: Array<{ role: string; content: string }> | undefined,
+  fallback: string,
+): Promise<string> {
+  const lastUser = [...(chatHistory ?? [])].reverse().find((m) => m.role === "user" && m.content?.trim());
+  const fb = (lastUser?.content?.trim() || fallback || "User requested a CPF officer.").slice(0, 200);
+  const convo = (chatHistory ?? [])
+    .filter((m) => m.content && m.content.trim())
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n")
+    .slice(0, 2000);
+  if (!convo.trim()) return fb;
+  let to: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<string>((_, reject) => { to = setTimeout(() => reject(new Error("summary timeout")), 8000); });
+    // thinking:disabled makes glm-5-turbo answer in ~1-2s (no reasoning tokens) so the summary
+    // is ready up front; includeSoul=false so it summarises instead of answering as PULSE.
+    const out = await Promise.race([callHermes(OFFICER_SUMMARY_PROMPT, convo, [], 200, false, { thinking: { type: "disabled" } }), timeout]);
+    return (out || "").trim() || fb;
+  } catch (err) {
+    log.warn({ err: String(err) }, "summariseQueryForOfficer failed — using fallback");
+    return fb;
+  } finally {
+    clearTimeout(to);
+  }
+}
+
 async function doEscalate(
   channel: InboundChannel,
   userId: string,
@@ -964,11 +994,18 @@ async function doEscalate(
   emotion: ScoredEmotion | null,
   chatHistory?: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>,
 ): Promise<void> {
+  // Generate the officer summary up front (thinking-disabled → ~1-2s) so the case shows the
+  // real summary immediately. Falls back to the citizen's last message on failure/timeout.
+  const lastUserMsg = [...(chatHistory ?? [])].reverse().find((m) => m.role === "user" && m.content?.trim());
+  const fallbackSummary = (lastUserMsg?.content?.trim() || botSummary || userMessage || "User requested a CPF officer.").slice(0, 200);
+  const querySummary = await summariseQueryForOfficer(chatHistory, fallbackSummary);
+
   const entry = await postToQueue({
     sessionId, userId,
     emotion_score: emotion?.emotion_score ?? 50,
     emotion_label: emotion?.emotion_label ?? "neutral",
     summary: botSummary || userMessage,
+    query_summary: querySummary,
     chat_history: chatHistory?.length
       ? chatHistory
       : [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
@@ -978,12 +1015,12 @@ async function doEscalate(
 
   if (entry) {
     notifyNewQueueEntry(entry.queueId, entry.emotion_label, entry.priority_score);
-    log.info({ queueId: entry.queueId, userId }, "User escalated to CCU queue");
+    log.info({ queueId: entry.queueId, userId, querySummary }, "User escalated to CCU queue");
   } else {
     log.error({ userId }, "doEscalate — queue entry was not created");
   }
 
-  let msg = "✅ You're now in the queue. A CPF officer will be with you shortly.\n\nYou may continue to type if you'd like to add more details — your officer will see everything when they take your case.";
+  let msg = "✅ You're now connected to a CCU officer. Please go ahead and type your message — the officer will reply to you right here in this chat.";
   if (preferredLang !== "en") {
     const t = await translateText(msg, "en", preferredLang).catch(() => null);
     if (t) msg = t.translated_text;

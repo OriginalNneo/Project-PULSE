@@ -90,6 +90,7 @@ export interface QueueEntry {
   emotion_score: number;
   emotion_label: string;
   summary: string;
+  query_summary?: string; // clean AI summary of what the member needs (set once at escalation; not clobbered by emotion updates)
   chat_history: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>;
   preferred_lang: string;
   dialect_hint: string | null;
@@ -368,6 +369,20 @@ export async function setQueueRating(queueId: string, rating: number): Promise<Q
   getPulseCollection("ccu_queue")
     .then((col) => col?.updateOne({ queueId }, { $set: { rating } }))
     .catch((err) => log.warn({ err }, "Failed to persist queue rating in MongoDB"));
+  return updated;
+}
+
+/** Patch the AI-generated query_summary onto a queue entry (generated async after escalation). */
+export async function setQueueQuerySummary(queueId: string, querySummary: string): Promise<QueueEntry | null> {
+  const entry = queueStore.get(queueId);
+  let updated: QueueEntry | null = null;
+  if (entry) {
+    updated = { ...entry, query_summary: querySummary };
+    queueStore.set(queueId, updated);
+  }
+  getPulseCollection("ccu_queue")
+    .then((col) => col?.updateOne({ queueId }, { $set: { query_summary: querySummary } }))
+    .catch((err) => log.warn({ err }, "Failed to persist queue query_summary in MongoDB"));
   return updated;
 }
 
