@@ -5,6 +5,87 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
 
 /* ------------------------------------------------------------------ data --- */
 
+// ───────────────────────── Live data layer ─────────────────────────────
+// Officer-queue API: GET /dashboard/queue, POST /dashboard/send/:id, live
+// updates over WS /dashboard/ws. In dev we call the backend directly
+// (NEXT_PUBLIC_BACKEND_URL in .env.local) because the Next proxy is unreliable.
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? '';
+const OFFICER_ID = 'sharon-lee';
+
+// Mock fallbacks for fields the backend queue does NOT carry (identity + financials).
+const MOCK_C = 'Singapore Citizen';
+const MOCK_BAL = { oa: '$12,430', ma: '$4,862', ra: '$8,205' };
+const MOCK_RET = { sum: 'Basic', payout: '$780 / month', start: 'Mar 2025', shortfall: '$43,500' };
+const MOCK_SCHEMES = [['CPF LIFE', 'Active'], ['MediShield Life', 'Enrolled'], ['Silver Support Scheme', 'Enrolled'], ['Matched Retirement Savings', 'Eligible']];
+
+const EMO_TO_SENT = { anger: 'angry', angry: 'angry', frustration: 'frustrated', frustrated: 'frustrated', sadness: 'sad', sad: 'sad', fear: 'sad', disgust: 'angry', confusion: 'confused', confused: 'confused', neutral: 'neutral', joy: 'happy', happy: 'happy', happiness: 'happy', surprise: 'neutral' };
+const sentFromEmotion = (label) => EMO_TO_SENT[String(label || '').toLowerCase()] || 'neutral';
+const LANG_NAME = { en: 'English', zh: 'Mandarin', ms: 'Malay', ta: 'Tamil', hi: 'Hindi', ml: 'Malayalam', pa: 'Punjabi' };
+const urgencyFromScore = (s) => { const n = s > 1 ? s : s * 100; return n >= 66 ? 'urgent' : n >= 33 ? 'medium' : 'low'; }; // scores are 0–100
+const minsSince = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? 0 : Math.max(0, Math.round((Date.now() - t) / 60000)); };
+const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : String(uid).startsWith('wa:') ? 'WhatsApp' : 'Member');
+const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
+
+// Realistic mock identities — the backend queue carries none, so each case is assigned
+// one deterministically (stable per case) to fill the profile + chat header. Display only.
+const MOCK_PROFILES = [
+  { name: 'Tan Wei Ming', nric: 'S6012345A', age: 66, phone: '+65 9123 4567', dob: '12 Mar 1960', address: 'Blk 412 Toa Payoh Lor 6, #08-21', balances: { oa: '$12,430', ma: '$4,862', ra: '$8,205' }, flags: ['Shortfall alert — $43,500 below Full Retirement Sum'] },
+  { name: 'Priya Nair', nric: 'S8123456B', age: 41, phone: '+65 9234 5678', dob: '04 Jul 1985', address: 'Blk 128 Bishan St 12, #11-08', balances: { oa: '$58,900', ma: '$31,450', ra: '$96,200' }, flags: [] },
+  { name: 'Chen Jia Hao', nric: 'S9234567C', age: 33, phone: '+65 9345 6789', dob: '21 Nov 1992', address: 'Blk 88 Punggol Field, #14-23', balances: { oa: '$74,100', ma: '$22,300', ra: '$18,640' }, flags: ['Approaching annual RSTU tax-relief cap'] },
+  { name: 'Lim Hui Ying', nric: 'S7345678D', age: 52, phone: '+65 9456 7890', dob: '09 Feb 1974', address: 'Blk 250 Ang Mo Kio Ave 4, #05-117', balances: { oa: '$41,200', ma: '$28,900', ra: '$62,100' }, flags: [] },
+  { name: 'Ahamed Faizal', nric: 'S8456789E', age: 38, phone: '+65 9567 8901', dob: '17 Sep 1987', address: 'Blk 501 Jurong West St 51, #09-44', balances: { oa: '$3,180', ma: '$19,540', ra: '$24,300' }, flags: ['Low OA balance after recent housing withdrawal'] },
+  { name: 'Lee Cheng Wei', nric: 'S9156782F', age: 35, phone: '+65 9678 9012', dob: '02 Jan 1991', address: 'Blk 19 Telok Blangah Cres, #07-30', balances: { oa: '$66,400', ma: '$14,870', ra: '$20,110' }, flags: [] },
+  { name: 'Siti Rahimah', nric: 'S8378901H', age: 44, phone: '+65 9890 1234', dob: '15 Dec 1981', address: 'Blk 677 Woodlands Dr 71, #03-256', balances: { oa: '$22,700', ma: '$16,300', ra: '$31,800' }, flags: [] },
+  { name: 'Goh Boon Kiat', nric: 'S6189012J', age: 67, phone: '+65 9012 3456', dob: '30 Mar 1959', address: 'Blk 7 Marine Terrace, #15-88', balances: { oa: '$31,500', ma: '$25,800', ra: '$98,400' }, flags: [] },
+];
+const hashIdx = (str, mod) => { let h = 0; const s = String(str || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return mod ? h % mod : 0; };
+
+// Map a backend QueueEntry → the person shape this dashboard renders.
+// Real fields come from the queue; identity + financials fall back to mock.
+function buildPerson(entry) {
+  const history = Array.isArray(entry.chat_history) ? entry.chat_history : [];
+  const createdAt = Date.parse(entry.created_at);
+  const isOfficer = (role) => (role === 'officer' || role === 'agent' || role === 'bot');
+  // Split by escalation time: messages before created_at are the prior AI-chatbot
+  // session (→ "Chat History" tab); messages after are the live officer conversation.
+  const prior = [], post = [];
+  for (const m of history) {
+    const ts = Date.parse(m.ts);
+    if (!Number.isNaN(ts) && !Number.isNaN(createdAt) && ts > createdAt) post.push(m);
+    else prior.push(m);
+  }
+  const summaryText = entry.query_summary || entry.summary || 'CPF enquiry';
+  // The WhatsApp "Text Us" opener that starts the officer chat — carries the summary.
+  const opener = {
+    from: 'cust',
+    text: `[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.\n\n[Summary of query]\n${summaryText}`,
+  };
+  const subject = summaryText.length > 48 ? summaryText.slice(0, 46).trim() + '…' : summaryText;
+  const lastUser = [...prior].reverse().find((m) => !isOfficer(m.role));
+  const profile = MOCK_PROFILES[hashIdx(entry.queueId || entry.userId, MOCK_PROFILES.length)];
+  return {
+    id: entry.queueId,
+    name: 'Nathaniel Neo', // live escalated cases use a fixed name so they don't duplicate the mock samples
+    citizenship: MOCK_C,
+    language: LANG_NAME[entry.preferred_lang] || 'English',
+    nric: profile.nric, age: profile.age, phone: profile.phone, dob: profile.dob, address: profile.address,
+    urgency: urgencyFromScore(entry.priority_score != null ? entry.priority_score : (entry.emotion_score || 0)),
+    sentiment: sentFromEmotion(entry.emotion_label),
+    subject, preview: summaryText,
+    mins: minsSince(entry.created_at),
+    q: lastUser ? lastUser.content : '',
+    balances: profile.balances, retirement: MOCK_RET, schemes: MOCK_SCHEMES, flags: profile.flags || [],
+    // Main chat = opener + post-escalation messages. Officer + citizen messages both
+    // live in chat_history now, so they interleave in chronological order.
+    thread: [opener, ...post.map((m) => ({ from: isOfficer(m.role) ? 'officer' : 'cust', text: m.content }))],
+    // Prior AI-chatbot session → rendered in the "Chat History" tab.
+    priorSession: prior.map((m) => ({ text: m.content, right: m.role === 'user' })),
+    status: entry.status,
+  };
+}
+
+// Heera's sample cases — used to seed the dashboard so it's never empty (demo data).
+// Real escalated cases load on top of these via loadQueue(); mock cases are display-only.
 const PEOPLE = (function () {
   const C = 'Singapore Citizen';
   const dB = { oa: '$12,430', ma: '$4,862', ra: '$8,205' };
@@ -66,6 +147,39 @@ const PEOPLE = (function () {
   return out;
 })();
 
+// Seed lists for the mock cases (heera's original incoming / active split).
+const MOCK_INCOMING = ['nurul', 'raj', 'lim', 'wong', 'ahamed', 'lee', 'siti', 'thomas', 'goh'];
+const MOCK_ACTIVE = ['tan', 'priya', 'chen'];
+const MOCK_THREADS = Object.fromEntries(Object.entries(PEOPLE).map(([id, p]) => [id, p.thread.slice()]));
+// Fuller back-and-forth for the active (open) chats so they read like live conversations.
+Object.assign(MOCK_THREADS, {
+  tan: [
+    { from: 'cust', text: '[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.\n\n[Summary of query]\nUser wants to understand why his MediSave claim for an outpatient day surgery was rejected.' },
+    { from: 'officer', text: 'Dear Mr Tan, thank you for reaching out. Let me check the details of your MediSave claim now.' },
+    { from: 'cust', text: 'I dont understand why it was rejected, I have money inside' },
+    { from: 'officer', text: 'I understand your concern. The claim of $8,500 exceeds your current MediSave balance of $4,862, so it could not be fully processed.' },
+    { from: 'cust', text: 'so what can i do? can i do partial claim?' },
+    { from: 'officer', text: 'Yes, you can make a partial MediSave claim up to your available balance and settle the rest separately. Shall I guide you through it?' },
+    { from: 'cust', text: 'yes please help me' },
+  ],
+  priya: [
+    { from: 'cust', text: '[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.\n\n[Summary of query]\nUser would like to confirm when her CPF LIFE monthly payouts will begin and the expected amount.' },
+    { from: 'officer', text: 'Hi Ms Nair, happy to help! Let me pull up your CPF LIFE plan details.' },
+    { from: 'cust', text: 'Sure! When will my payouts start?' },
+    { from: 'officer', text: 'Based on your Full Retirement Sum, your CPF LIFE payouts of about $1,470/month are scheduled to begin in July 2050, from age 65.' },
+    { from: 'cust', text: 'Oh thats great, thank you so much!' },
+    { from: 'officer', text: 'You are most welcome! Is there anything else I can help you with today?' },
+  ],
+  chen: [
+    { from: 'cust', text: '[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.\n\n[Summary of query]\nUser is asking how much he can top up under RSTU this year to qualify for tax relief.' },
+    { from: 'officer', text: 'Hi Mr Chen, thanks for your enquiry. Cash top-ups to your Special Account under RSTU may qualify for tax relief.' },
+    { from: 'cust', text: 'how much can i top up for tax relief this year?' },
+    { from: 'officer', text: 'You can receive tax relief of up to $8,000 a year for top-ups to your own Special Account. You are close to that cap, so do check your year-to-date amount first.' },
+    { from: 'cust', text: 'ok noted, where can i check that?' },
+    { from: 'officer', text: 'You can view your year-to-date top-ups under My Statement on the CPF website via Singpass. Would you like the link?' },
+  ],
+});
+
 /* -------------------------------------------------------------- helpers --- */
 
 const fmt = (m) => (m < 1 ? 'Just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} hr ago`);
@@ -104,22 +218,24 @@ const cardShadow = { boxShadow: '0 1px 2px rgba(16,24,40,.04),0 6px 16px rgba(16
 
 export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1.7, headerColor = '#0a6160', logoSrc = '/cpf-logo.png' }) {
   const [tab, setTab] = useState('incoming');
-  const [incoming, setIncoming] = useState(['nurul', 'raj', 'lim', 'wong', 'ahamed', 'lee', 'siti', 'thomas', 'goh']);
-  const [active, setActive] = useState(['tan', 'priya', 'chen']);
+  const [people, setPeople] = useState(PEOPLE);
+  const [incoming, setIncoming] = useState(MOCK_INCOMING);
+  const [active, setActive] = useState(MOCK_ACTIVE);
   const [openChatId, setOpenChatId] = useState('tan');
   const [infoTab, setInfoTab] = useState('info');
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState(false);
-  const [resolved] = useState(23);
-  const [threads, setThreads] = useState(() =>
-    Object.fromEntries(Object.entries(PEOPLE).map(([id, p]) => [id, p.thread.slice()]))
-  );
+  const [resolved, setResolved] = useState(0);
+  const [stats, setStats] = useState({ waiting: 0, avg_wait_minutes: 0 });
+  const [threads, setThreads] = useState(MOCK_THREADS);
 
   const msgRef = useRef(null);
   const replyIdx = useRef(0);
   const timer = useRef(null);
+  const acceptedRef = useRef(new Set());   // locally-accepted ids (no backend "assign" route)
+  const removedRef = useRef(new Set());    // locally-resolved ids (mock + live) — don't re-show on refetch
 
   useEffect(() => {
     const el = msgRef.current;
@@ -127,7 +243,57 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   });
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // Load the live officer queue and map each entry onto this dashboard's shape.
+  const loadQueue = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/dashboard/queue`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const entries = Array.isArray(data && data.queue) ? data.queue : [];
+      const livePeople = {}, liveInc = [], liveAct = [], liveThreads = {};
+      for (const entry of entries) {
+        if (removedRef.current.has(entry.queueId)) continue; // locally resolved — skip until backend catches up
+        const person = buildPerson(entry);
+        livePeople[person.id] = person;
+        liveThreads[person.id] = person.thread; // citizen + officer messages both come from chat_history
+        if (entry.status === 'assigned' || acceptedRef.current.has(person.id)) liveAct.push(person.id);
+        else liveInc.push(person.id);
+      }
+      // Mock sample cases (display-only) sit alongside live cases: accepted ones move to
+      // active, resolved ones drop out.
+      const mockInc = MOCK_INCOMING.filter((id) => !acceptedRef.current.has(id) && !removedRef.current.has(id));
+      const mockAct = [
+        ...MOCK_ACTIVE.filter((id) => !removedRef.current.has(id)),
+        ...MOCK_INCOMING.filter((id) => acceptedRef.current.has(id) && !removedRef.current.has(id)),
+      ];
+      setPeople({ ...PEOPLE, ...livePeople });
+      setIncoming([...liveInc, ...mockInc]);
+      setActive([...liveAct, ...mockAct]);
+      setThreads((prev) => ({ ...prev, ...liveThreads }));
+      if (data && data.stats) setStats(data.stats);
+    } catch { /* keep whatever is shown on failure */ }
+  }, []);
+
+  // Initial load + live updates over the dashboard WebSocket (direct to :3000).
+  useEffect(() => {
+    loadQueue();
+    let ws;
+    const wsBase = API_BASE
+      ? API_BASE.replace(/^http/, 'ws')
+      : (typeof window !== 'undefined' ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}` : '');
+    try {
+      ws = new WebSocket(`${wsBase}/dashboard/ws`);
+      ws.onmessage = (ev) => {
+        let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+        const REFRESH = ['new_queue_entry', 'queue_updated', 'case_resolved', 'officer_assigned', 'emotion_update', 'user_message', 'officer_message'];
+        if (msg && REFRESH.includes(msg.event)) loadQueue();
+      };
+    } catch { /* websocket is optional — the initial fetch already ran */ }
+    return () => { try { if (ws) ws.close(); } catch { /* noop */ } };
+  }, [loadQueue]);
+
   const accept = useCallback((id) => {
+    acceptedRef.current.add(id);
     setIncoming((inc) => inc.filter((x) => x !== id));
     setActive((act) => (act.includes(id) ? act : [id, ...act.filter((x) => x !== id)]));
     setOpenChatId(id);
@@ -135,42 +301,60 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     setTab('chats');
   }, []);
 
+  // Officer marks the case resolved → drops it from the live queue (PATCH backend).
+  const resolveCase = useCallback(async (id) => {
+    if (!id) return;
+    acceptedRef.current.delete(id);
+    removedRef.current.add(id);
+    setActive((act) => act.filter((x) => x !== id));
+    setIncoming((inc) => inc.filter((x) => x !== id));
+    setOpenChatId((cur) => (cur === id ? '' : cur));
+    if (id in PEOPLE) return; // mock sample case — nothing to resolve on the backend
+    try {
+      await fetch(`${API_BASE}/dashboard/resolve/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ officerId: OFFICER_ID }),
+      });
+    } catch { /* keep the optimistic removal even if the request fails */ }
+  }, []);
+
   const open = useCallback((id) => { setOpenChatId(id); setInfoTab('info'); }, []);
 
-  const send = useCallback(() => {
+  const send = useCallback(async () => {
     const id = openChatId;
     const text = (draft || '').trim();
     if (!text || !id) return;
+    // Optimistic append for instant feedback; the backend persists it to chat_history,
+    // so the next refetch shows it interleaved chronologically (no duplicate).
     setThreads((t) => ({ ...t, [id]: [...(t[id] || []), { from: 'officer', text }] }));
     setDraft('');
-    if (!simulateReplies) return;
-    setTyping(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      const pool = ['Okay, thank you for explaining.', 'So what should I do next?', 'I see \u2014 how long will that take?', 'Can I settle this online, or must I visit a branch?', 'Alright, I understand now. Appreciate the help.', 'But I submitted the documents last week already.', 'Got it, thank you for your patience with me.'];
-      const r = pool[replyIdx.current++ % pool.length];
-      setThreads((t) => ({ ...t, [id]: [...(t[id] || []), { from: 'cust', text: r }] }));
-      setTyping(false);
-    }, replyDelaySec * 1000);
-  }, [openChatId, draft, simulateReplies, replyDelaySec]);
+    try {
+      await fetch(`${API_BASE}/dashboard/send/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, officerId: OFFICER_ID }),
+      });
+    } catch { /* keep the optimistic message even if the send fails */ }
+  }, [openChatId, draft]);
 
   /* ---- derived view data ---- */
 
   const queries = useMemo(() => {
     let ids = incoming.slice();
-    if (filter !== 'all') ids = ids.filter((id) => PEOPLE[id].urgency === filter);
+    if (filter !== 'all') ids = ids.filter((id) => people[id].urgency === filter);
     ids.sort((a, b) => {
-      const pa = PEOPLE[a], pb = PEOPLE[b];
+      const pa = people[a], pb = people[b];
       if (sort === 'oldest') return pb.mins - pa.mins;
       if (sort === 'urgency') return urgRank(pb.urgency) - urgRank(pa.urgency) || pa.mins - pb.mins;
       if (sort === 'sentiment') return sentRank(pb.sentiment) - sentRank(pa.sentiment) || pa.mins - pb.mins;
       return pa.mins - pb.mins;
     });
-    return ids.map((id) => PEOPLE[id]);
+    return ids.map((id) => people[id]);
   }, [incoming, filter, sort]);
 
   const activeList = useMemo(() => active.map((id) => {
-    const p = PEOPLE[id];
+    const p = people[id];
     const t = threads[id] || [];
     const last = t[t.length - 1];
     return {
@@ -181,7 +365,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     };
   }), [active, threads, openChatId]);
 
-  const oc = PEOPLE[openChatId];
+  const oc = people[openChatId];
   const hasOpen = !!oc;
   const msgs = (threads[openChatId] || []).map((m, i) => ({ ...m, right: m.from === 'officer', key: i }));
 
@@ -201,7 +385,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     { from: 'bot', text: 'Thanks for sharing those details. This needs a closer look, so I\u2019m connecting you to a Customer Correspondence Officer who can assist you further.' }
   ].map((m, i) => ({ ...m, right: m.from === 'user', key: i })) : [];
 
-  const urgentActive = active.filter((id) => PEOPLE[id].urgency === 'urgent').length;
+  const urgentActive = active.filter((id) => people[id].urgency === 'urgent').length;
   const isIncoming = tab === 'incoming';
   const FILTERS = [['all', 'All'], ['urgent', 'Urgent'], ['medium', 'Medium'], ['low', 'Low']];
 
@@ -257,8 +441,8 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto', padding: '28px 38px 64px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
             <StatCard value={String(active.length)} label="OPEN CHATS" sub={urgentActive ? `${urgentActive} urgent` : 'all calm'} subColor={urgentActive ? '#ca2424' : '#1a981e'} />
-            <StatCard value={String(incoming.length)} label="INCOMING INQUIRIES" sub="+3 in the last 10 min" subColor="#ca2424" />
-            <StatCard value="10m" label="AVG RESPONSE TIME" sub="Good!" subColor="#1a981e" />
+            <StatCard value={String(incoming.length)} label="INCOMING INQUIRIES" sub={incoming.length ? 'waiting now' : 'all clear'} subColor={incoming.length ? '#ca2424' : '#1a981e'} />
+            <StatCard value={`${stats.avg_wait_minutes}m`} label="AVG RESPONSE TIME" sub="live" subColor="#1a981e" />
             <StatCard value={String(resolved)} label="RESOLVED TODAY" sub="Good!" subColor="#1a981e" />
           </div>
 
@@ -362,6 +546,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                   <span style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.1 }}>{oc.name}</span>
                   <span style={{ fontSize: 13, color: '#1a981e', fontWeight: 500, marginTop: 2 }}>● Active now · {oc.subject}</span>
                 </div>
+                <button onClick={() => resolveCase(openChatId)} title="Resolve this case" style={{ flex: 'none', border: 'none', cursor: 'pointer', background: '#0a6160', color: '#fff', fontWeight: 700, fontSize: 14, padding: '11px 20px', borderRadius: 24, boxShadow: '0 2px 8px rgba(10,97,96,.32)', letterSpacing: '.3px' }}>✓ Resolve</button>
                 <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#fff', boxShadow: '2px 2px 6px rgba(0,0,0,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
                   <svg viewBox="0 0 24 24" width="26" height="26" fill="#1a981e"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.24 11.4 11.4 0 0 0 3.56.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.56 1 1 0 0 1-.24 1l-2.23 2.24z" /></svg>
                 </div>
@@ -400,7 +585,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           )}
 
           {/* right panel */}
-          <div style={{ flex: 'none', width: 404, background: '#f5f6f8', display: 'flex', flexDirection: 'column', minHeight: 0, borderLeft: '1px solid #e0e2e2' }}>
+          <div style={{ flex: 'none', width: 520, background: '#f5f6f8', display: 'flex', flexDirection: 'column', minHeight: 0, borderLeft: '1px solid #e0e2e2' }}>
             <div style={{ flex: 'none', padding: '16px 18px 6px' }}>
               <div style={{ display: 'flex', background: '#e6e9ec', borderRadius: 24, padding: 4, gap: 4 }}>
                 <div style={seg(infoTab === 'info')} onClick={() => setInfoTab('info')}>User Information</div>
@@ -471,8 +656,8 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.6px', padding: '4px 9px', borderRadius: 10, background: 'rgba(255,255,255,.22)' }}>AI</span>
                     </div>
                     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 5, background: '#f4f6f6' }}>
-                      {botMsgs.map((b) => (
-                        <div key={b.key} style={{ display: 'flex', justifyContent: b.right ? 'flex-end' : 'flex-start', padding: '3px 0' }}>
+                      {(hasOpen && oc.priorSession ? oc.priorSession : []).map((b, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: b.right ? 'flex-end' : 'flex-start', padding: '3px 0' }}>
                           <div style={{ maxWidth: '84%', padding: '9px 13px', borderRadius: b.right ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: b.right ? '#dcf6c8' : '#e6efef', color: '#1c1c1c', fontSize: 13.5, lineHeight: 1.42, whiteSpace: 'pre-wrap', boxShadow: '0 1px 1px rgba(0,0,0,0.06)' }}>{b.text}</div>
                         </div>
                       ))}
