@@ -16,6 +16,9 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 const GREETING =
   "Hello! I'm PULSE. How can I help you today? You can ask me about tax letters, healthcare appointments, housing matters, or any government correspondence.";
 
+// Demo: what a "clear" voice note gets transcribed to (the unclear path errors instead).
+const CLEAR_TRANSCRIPT = "How much of my CPF can I withdraw at age 55?";
+
 // Backend /query accepts these language codes (LanguageSchema). The text query
 // endpoint has no dialect field, so each dialect maps to its base language.
 const LANGUAGES: { label: string; code: string }[] = [
@@ -44,6 +47,10 @@ export default function ChatPage() {
   const [activeLangLabel, setActiveLangLabel] = useState("English");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Voice-note demo (scenario 2): clear → transcribed & answered; unclear → error.
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceQuality, setVoiceQuality] = useState<"clear" | "unclear">("clear");
+  const [voiceError, setVoiceError] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   function selectLanguage(label: string, code: string) {
@@ -52,59 +59,70 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }
 
-  async function send() {
-    const text = input.trim();
-    if (!text || isSending) return;
-
+  // Send one turn to /query. `displayContent` is what appears in the chat as the
+  // user's message; `queryText` is what's actually sent (same, except voice notes).
+  async function runQuery(displayContent: string, queryText: string) {
+    if (isSending) return;
     setError(null);
-    const userMessage: Message = {
-      role: "user",
-      content: text,
-      timestamp: new Date().toISOString(),
-    };
-    // History the backend should see is everything BEFORE this new message.
-    const history = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-      timestamp: m.timestamp,
-    }));
+    setVoiceError(false);
+    const userMessage: Message = { role: "user", content: displayContent, timestamp: new Date().toISOString() };
+    const history = messages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp }));
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
     setIsSending(true);
-
     try {
       const res = await fetch(`${API_BASE}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          conversationHistory: history,
-          language,
-        }),
+        body: JSON.stringify({ message: queryText, conversationHistory: history, language }),
       });
-
-      if (!res.ok) {
-        throw new Error(`Server responded ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const json = await res.json();
       const reply: string =
-        json?.data?.content ??
-        "Sorry, I couldn't read a reply from PULSE just now. Please try again.";
-
-      setMessages((prev) => [
-        ...prev,
-        { role: "agent", content: reply, timestamp: new Date().toISOString() },
-      ]);
+        json?.data?.content ?? "Sorry, I couldn't read a reply from PULSE just now. Please try again.";
+      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString() }]);
     } catch (err) {
-      setError(
-        "Sorry, I couldn't reach PULSE. Please check your connection and try again.",
-      );
+      setError("Sorry, I couldn't reach PULSE. Please check your connection and try again.");
     } finally {
       setIsSending(false);
       inputRef.current?.focus();
     }
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || isSending) return;
+    setInput("");
+    await runQuery(text, text);
+  }
+
+  // ── Voice note (simulated for the demo; real mic recording could replace this) ──
+  function startRecording() {
+    if (isSending) return;
+    setVoiceError(false);
+    setIsRecording(true);
+  }
+
+  function stopRecording() {
+    setIsRecording(false);
+    if (voiceQuality === "unclear") {
+      setVoiceError(true); // failure path — couldn't make out the recording
+      return;
+    }
+    void runQuery(`🎤 ${CLEAR_TRANSCRIPT}`, CLEAR_TRANSCRIPT); // clear → transcribed & answered
+  }
+
+  function connectOfficer() {
+    setVoiceError(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "agent",
+        content:
+          "Connecting you to a Customer Correspondence Officer — please hold while we transfer you. An officer will continue this conversation with you shortly.",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -113,7 +131,6 @@ export default function ChatPage() {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Enter sends; Shift+Enter inserts a newline.
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -127,23 +144,24 @@ export default function ChatPage() {
 
       <div role="log" aria-label="Conversation" aria-live="polite" aria-atomic="false">
         {messages.map((m, i) => (
-          <div
-            key={i}
-            role="article"
-            aria-label={m.role === "user" ? "You" : "PULSE"}
-          >
+          <div key={i} role="article" aria-label={m.role === "user" ? "You" : "PULSE"}>
             <p>
               <strong>{m.role === "user" ? "You" : "PULSE"}:</strong> {m.content}
             </p>
           </div>
         ))}
-        {isSending && (
-          <p aria-live="polite">PULSE is thinking…</p>
-        )}
+        {isSending && <p aria-live="polite">PULSE is thinking…</p>}
       </div>
 
-      {error && (
-        <p role="alert">{error}</p>
+      {error && <p role="alert">{error}</p>}
+
+      {/* Voice-note failure (scenario 2): unclear/muffled recording */}
+      {voiceError && (
+        <div role="alert">
+          <p>🎤 Sorry, I couldn’t make out your voice message clearly — it sounded muffled or unclear. Please try again, or connect to a CCU officer for help.</p>
+          <button type="button" onClick={() => { setVoiceError(false); startRecording(); }}>🔁 Try again</button>
+          <button type="button" onClick={connectOfficer}>👤 Connect to a CCU officer</button>
+        </div>
       )}
 
       <form aria-label="Send a message" onSubmit={onSubmit}>
@@ -163,16 +181,24 @@ export default function ChatPage() {
         </button>
       </form>
 
+      {/* Voice message control */}
+      <div aria-label="Voice message">
+        {!isRecording ? (
+          <button type="button" onClick={startRecording} disabled={isSending}>🎤 Record voice message</button>
+        ) : (
+          <button type="button" onClick={stopRecording}>⏹ Stop &amp; send (recording…)</button>
+        )}
+        <span> — demo voice quality: </span>
+        <button type="button" aria-pressed={voiceQuality === "clear"} onClick={() => setVoiceQuality("clear")} disabled={isRecording}>Clear</button>
+        <button type="button" aria-pressed={voiceQuality === "unclear"} onClick={() => setVoiceQuality("unclear")} disabled={isRecording}>Unclear</button>
+      </div>
+
       <nav aria-label="Language selection">
         <p>Replying in: <strong>{activeLangLabel}</strong></p>
         <ul>
           {LANGUAGES.map((l) => (
             <li key={l.label}>
-              <button
-                type="button"
-                aria-pressed={activeLangLabel === l.label}
-                onClick={() => selectLanguage(l.label, l.code)}
-              >
+              <button type="button" aria-pressed={activeLangLabel === l.label} onClick={() => selectLanguage(l.label, l.code)}>
                 {l.label}
               </button>
             </li>
@@ -183,11 +209,7 @@ export default function ChatPage() {
           <ul>
             {DIALECTS.map((d) => (
               <li key={d.label}>
-                <button
-                  type="button"
-                  aria-pressed={activeLangLabel === d.label}
-                  onClick={() => selectLanguage(d.label, d.code)}
-                >
+                <button type="button" aria-pressed={activeLangLabel === d.label} onClick={() => selectLanguage(d.label, d.code)}>
                   {d.label}
                 </button>
               </li>
