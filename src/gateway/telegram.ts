@@ -139,7 +139,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       await channel.send("Sorry, I couldn't download that voice message. Please try again.").catch(() => null);
       return;
     }
-    await processInbound(channel, { userKey: String(chatId), audioBase64: file.base64, mimeType: file.mimeType });
+    await processInbound(channel, { userKey: String(chatId), audioBase64: file.base64, mimeType: file.mimeType, durationSec: (message.voice as { duration?: number }).duration });
     return;
   }
 

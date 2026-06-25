@@ -68,6 +68,7 @@ export interface InboundMessage {
   text?: string;
   audioBase64?: string;
   mimeType?: string;
+  durationSec?: number; // voice-note length in seconds (used to flag too-short/unclear recordings)
 }
 
 // Words that mean "yes, connect me to an officer"
@@ -107,6 +108,7 @@ function stripMarkdownForTTS(text: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url) → link text
     .replace(/https?:\/\/\S+/g, "")       // bare URLs
     .replace(/[•\-–—]\s*/g, "")           // bullet chars
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F1E6}-\u{1F1FF}]/gu, "") // emojis (TTS reads their names aloud)
     .replace(/\n{2,}/g, ". ")             // paragraph breaks → pause
     .replace(/\n/g, " ")
     .replace(/\s{2,}/g, " ")
@@ -117,6 +119,53 @@ function stripMarkdownForTTS(text: string): string {
 const OFFICER_BUTTON: ChannelButton[][] = [
   [{ label: "🧑‍💼 Connect to CPF Officer", callbackId: "connect_officer" }],
 ];
+
+const VOICE_CLARITY_PROMPT =
+  'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. Decide if it is a usable message a real person might send — a question, request, greeting or short answer, even in Singlish or broken English. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random or repeated words, or generic off-topic filler unrelated to getting help (e.g. "Am I right?", "thank you for watching", "uh huh"). Reply with ONE word: CLEAR or UNCLEAR.';
+
+// True if a voice transcription looks like it came from an unclear/muffled recording.
+// Uses the LLM with thinking disabled (~1-2s) so it judges the actual transcription.
+async function transcriptionLooksUnclear(text: string): Promise<boolean> {
+  const t = text.trim();
+  if (t.length < 5) return true;
+  let to: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<string>((_, reject) => { to = setTimeout(() => reject(new Error("clarity timeout")), 8000); });
+    const out = await Promise.race([callHermes(VOICE_CLARITY_PROMPT, t, [], 100, false, { thinking: { type: "disabled" } }), timeout]);
+    return /unclear/i.test(out || "");
+  } catch (err) {
+    log.warn({ err: String(err) }, "voice clarity check failed — treating as clear");
+    return false;
+  } finally {
+    clearTimeout(to);
+  }
+}
+
+// Failure scenario reply: couldn't make out the voice note. Replies in the user's
+// language, with the "Connect to CPF Officer" button, and a spoken (TTS) version.
+async function sendUnclearVoiceReply(
+  channel: InboundChannel,
+  userId: string,
+  lang: string,
+  prefs: { speech_rate?: number; preferred_dialect?: string },
+): Promise<void> {
+  // Remember the last voice note was unclear so an escalation right after has context.
+  await upsertUserPrefs({ userId, pendingVoiceUnclear: true }).catch(() => null);
+  let msg = "🎤 Sorry, I couldn’t make out your voice message clearly — it sounded muffled or unclear. Please try recording again in a quiet place and speak slowly, or tap the button below to connect to a CPF officer who can help.";
+  if (lang !== "en") {
+    const t = await translateText(msg, "en", lang).catch(() => null);
+    if (t) msg = t.translated_text;
+  }
+  if (channel.sendWithButtons) {
+    await channel.sendWithButtons(msg, OFFICER_BUTTON, false).catch(() => null);
+  } else {
+    await channel.send(msg).catch(() => null);
+  }
+  if (channel.sendVoice) {
+    const tts = await synthesizeSpeech(stripMarkdownForTTS(msg), lang as Lang, prefs.speech_rate ?? 1.0, prefs.preferred_dialect).catch(() => null);
+    if (tts?.audioBase64) await channel.sendVoice(tts.audioBase64, tts.mimeType).catch(() => null);
+  }
+}
 
 // Strip any residual hotline numbers or stale "reply *Officer*" text the LLM may emit.
 function sanitizeReply(text: string): string {
@@ -495,11 +544,15 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       }
     } catch (err) {
       log.error(err, "STT failed");
-      await channel.send("Sorry, I couldn't understand your voice message. Please try again or type your question.").catch(() => null);
+      await sendUnclearVoiceReply(channel, userId, lang, prefs);
       return;
     }
-    if (!messageText) {
-      await channel.send("Sorry, I couldn't understand your voice message. Please try again or type your question.").catch(() => null);
+    // Unclear-voice detection: empty/garbled transcription, a too-short recording, or an
+    // incoherent transcription (Whisper hallucinations like "Am I right?" for muffled audio).
+    const shortAudio = msg.durationSec != null && msg.durationSec < 1.2;
+    if (!messageText || messageText.length < 5 || shortAudio || (await transcriptionLooksUnclear(messageText))) {
+      log.info({ userId, messageText, durationSec: msg.durationSec }, "Voice message judged unclear — sending error + officer option");
+      await sendUnclearVoiceReply(channel, userId, lang, prefs);
       return;
     }
   }
@@ -817,6 +870,9 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     { role: "agent", content: plainBotReply, ts: new Date().toISOString() },
   );
 
+  // A normal answer means the last turn wasn't an unclear voice note — clear the flag.
+  if (prefs.pendingVoiceUnclear) await upsertUserPrefs({ userId, pendingVoiceUnclear: false }).catch(() => null);
+
   // ── Escalation analysis ──────────────────────────────────────────────────────
   // Run the 5-layer escalation analyzer, with triage as fallback.
   // High distress (score > 70) auto-triggers the officer button regardless of
@@ -945,10 +1001,16 @@ export async function escalateUser(channel: InboundChannel, userId: string): Pro
     ? `"${latestEmotion.message_preview}" — emotion: ${latestEmotion.emotion_label} (${latestEmotion.emotion_score})`
     : "User requested CPF officer via button";
 
-  await upsertUserPrefs({ ...(prefs ?? { userId, preferred_lang: "en", voice_enabled: false, speech_rate: 1.0, accessibility_mode: "standard" }), pendingOfficerOffer: false }).catch(() => null);
+  // If they're escalating straight after an unclear voice note, the chat history is empty —
+  // give the officer a meaningful summary instead of the generic button text.
+  const presetSummary = prefs?.pendingVoiceUnclear
+    ? "Unclear voice recording — the citizen's audio could not be understood; they need assistance."
+    : undefined;
+
+  await upsertUserPrefs({ ...(prefs ?? { userId, preferred_lang: "en", voice_enabled: false, speech_rate: 1.0, accessibility_mode: "standard" }), pendingOfficerOffer: false, pendingVoiceUnclear: false }).catch(() => null);
   const chatHistory = getHistory(userId);
   clearHistory(userId);
-  await doEscalate(channel, userId, sessionId, summary, "", lang, emotion, chatHistory);
+  await doEscalate(channel, userId, sessionId, summary, "", lang, emotion, chatHistory, presetSummary);
 }
 
 // Generate a single-sentence "User wants to…" summary of the conversation for the
@@ -993,12 +1055,14 @@ async function doEscalate(
   preferredLang: string,
   emotion: ScoredEmotion | null,
   chatHistory?: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>,
+  presetQuerySummary?: string,
 ): Promise<void> {
   // Generate the officer summary up front (thinking-disabled → ~1-2s) so the case shows the
-  // real summary immediately. Falls back to the citizen's last message on failure/timeout.
+  // real summary immediately. A preset (e.g. for unclear voice) skips the LLM; otherwise it
+  // falls back to the citizen's last message on failure/timeout.
   const lastUserMsg = [...(chatHistory ?? [])].reverse().find((m) => m.role === "user" && m.content?.trim());
   const fallbackSummary = (lastUserMsg?.content?.trim() || botSummary || userMessage || "User requested a CPF officer.").slice(0, 200);
-  const querySummary = await summariseQueryForOfficer(chatHistory, fallbackSummary);
+  const querySummary = presetQuerySummary?.trim() || (await summariseQueryForOfficer(chatHistory, fallbackSummary));
 
   const entry = await postToQueue({
     sessionId, userId,

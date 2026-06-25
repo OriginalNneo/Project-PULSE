@@ -39,6 +39,7 @@ export interface UserPrefs {
   speech_rate: number;
   accessibility_mode: string;
   pendingOfficerOffer?: boolean;
+  pendingVoiceUnclear?: boolean; // last voice note was unclear → used to summarise an escalation right after
   preferred_dialect?: string;
   pendingGuiding?: PendingGuiding;
 }
