@@ -1,7 +1,7 @@
 import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
-import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory, setQueueQuerySummary } from "../db/proxy-client.js";
 import { callHermes } from "../services/ai/llmClient.js";
 import { findGuidingSetForQuery } from "../data/knowledge/guiding.js";
 import { synthesizeGuidedAnswer } from "../agents/query/guidedSynthesis.js";
@@ -20,7 +20,7 @@ import {
   clearHistory,
   isClosingMessage,
 } from "../services/session/manager.js";
-import { notifyNewQueueEntry } from "../dashboard/notify.js";
+import { notifyNewQueueEntry, notifyQueueUpdated } from "../dashboard/notify.js";
 import { formatReply, containsHtml } from "../shared/formatter.js";
 import { analyzeEscalation } from "../agents/escalation/analyzer.js";
 import { classifyQuery } from "../agents/triage/classifier.js";
@@ -1019,12 +1019,37 @@ export async function escalateUser(channel: InboundChannel, userId: string): Pro
 const OFFICER_SUMMARY_PROMPT =
   'You are a silent summariser. Read the conversation and output ONE concise sentence (max 30 words) describing what the CPF member needs help with, written for a customer service officer. Begin with "User wants" or "User is". Do NOT answer the member, do NOT greet, do NOT give advice, do NOT add links or emotion labels — output only the summary sentence.';
 
+// A message that's essentially just "connect me to an officer" — not a real query. Used so a
+// provisional/fallback summary never surfaces a bare trigger word like "officer please".
+function isBareTriggerPhrase(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[^\w\s]/g, "").trim();
+  if (!t) return true;
+  if (OFFICER_AFFIRMATIONS.has(t)) return true;
+  const words = t.split(/\s+/);
+  return words.length <= 3 && /\b(officer|human|agent|staff|connect|speak|talk|representative|person)\b/.test(t);
+}
+
+// Best NON-LLM summary to post immediately: the most recent substantive user message (skipping
+// bare escalation triggers), else a clean default. Guarantees the card never reads "officer please".
+function pickProvisionalSummary(
+  chatHistory: Array<{ role: string; content: string }> | undefined,
+  fallback?: string,
+): string {
+  const substantive = [...(chatHistory ?? [])]
+    .reverse()
+    .find((m) => m.role === "user" && m.content?.trim() && !isBareTriggerPhrase(m.content));
+  const pick = substantive?.content?.trim()
+    || (fallback && !isBareTriggerPhrase(fallback) ? fallback.trim() : "")
+    || "User requested a CPF officer.";
+  return pick.slice(0, 200);
+}
+
 async function summariseQueryForOfficer(
   chatHistory: Array<{ role: string; content: string }> | undefined,
   fallback: string,
+  timeoutMs = 8000,
 ): Promise<string> {
-  const lastUser = [...(chatHistory ?? [])].reverse().find((m) => m.role === "user" && m.content?.trim());
-  const fb = (lastUser?.content?.trim() || fallback || "User requested a CPF officer.").slice(0, 200);
+  const fb = pickProvisionalSummary(chatHistory, fallback);
   const convo = (chatHistory ?? [])
     .filter((m) => m.content && m.content.trim())
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
@@ -1033,7 +1058,7 @@ async function summariseQueryForOfficer(
   if (!convo.trim()) return fb;
   let to: ReturnType<typeof setTimeout> | undefined;
   try {
-    const timeout = new Promise<string>((_, reject) => { to = setTimeout(() => reject(new Error("summary timeout")), 8000); });
+    const timeout = new Promise<string>((_, reject) => { to = setTimeout(() => reject(new Error("summary timeout")), timeoutMs); });
     // thinking:disabled makes glm-5-turbo answer in ~1-2s (no reasoning tokens) so the summary
     // is ready up front; includeSoul=false so it summarises instead of answering as PULSE.
     const out = await Promise.race([callHermes(OFFICER_SUMMARY_PROMPT, convo, [], 200, false, { thinking: { type: "disabled" } }), timeout]);
@@ -1057,12 +1082,12 @@ async function doEscalate(
   chatHistory?: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>,
   presetQuerySummary?: string,
 ): Promise<void> {
-  // Generate the officer summary up front (thinking-disabled → ~1-2s) so the case shows the
-  // real summary immediately. A preset (e.g. for unclear voice) skips the LLM; otherwise it
-  // falls back to the citizen's last message on failure/timeout.
-  const lastUserMsg = [...(chatHistory ?? [])].reverse().find((m) => m.role === "user" && m.content?.trim());
-  const fallbackSummary = (lastUserMsg?.content?.trim() || botSummary || userMessage || "User requested a CPF officer.").slice(0, 200);
-  const querySummary = presetQuerySummary?.trim() || (await summariseQueryForOfficer(chatHistory, fallbackSummary));
+  // Post the case immediately with a NON-LLM provisional summary, so escalation never blocks on
+  // a slow model (the old inline 8s race is what surfaced "officer please" on a timeout). A
+  // preset (e.g. unclear voice) is authoritative. The real AI summary is upgraded in the
+  // background below and patched onto the dashboard live.
+  const provisionalSummary = presetQuerySummary?.trim()
+    || pickProvisionalSummary(chatHistory, botSummary || userMessage);
 
   // Pull the citizen's real channel name (captured on inbound) so the officer dashboard
   // shows it in place of a hardcoded placeholder. Optional — undefined → UI derives a label.
@@ -1074,7 +1099,7 @@ async function doEscalate(
     emotion_score: emotion?.emotion_score ?? 50,
     emotion_label: emotion?.emotion_label ?? "neutral",
     summary: botSummary || userMessage,
-    query_summary: querySummary,
+    query_summary: provisionalSummary,
     chat_history: chatHistory?.length
       ? chatHistory
       : [{ role: "user", content: userMessage, ts: new Date().toISOString() }],
@@ -1084,7 +1109,23 @@ async function doEscalate(
 
   if (entry) {
     notifyNewQueueEntry(entry.queueId, entry.emotion_label, entry.priority_score);
-    log.info({ queueId: entry.queueId, userId, querySummary }, "User escalated to CCU queue");
+    log.info({ queueId: entry.queueId, userId, querySummary: provisionalSummary }, "User escalated to CCU queue");
+
+    // Background summary upgrade — only when there's a real conversation to summarise and no
+    // preset. Generous 25s budget (vs the old blocking 8s) since nothing waits on it; on success
+    // patch + live-refresh the dashboard. Fire-and-forget: a slow/failed model just leaves the
+    // provisional summary in place, so the worst case is a plain (not broken) summary.
+    const hasConversation = (chatHistory ?? []).some((m) => m.role === "user" && m.content?.trim());
+    if (!presetQuerySummary?.trim() && hasConversation) {
+      void (async () => {
+        const ai = (await summariseQueryForOfficer(chatHistory, provisionalSummary, 25000)).trim();
+        if (ai && ai !== provisionalSummary) {
+          await setQueueQuerySummary(entry.queueId, ai);
+          notifyQueueUpdated(entry.queueId, entry.priority_score);
+          log.info({ queueId: entry.queueId, querySummary: ai }, "Officer summary upgraded (background)");
+        }
+      })().catch((err: unknown) => log.warn({ err: String(err), queueId: entry.queueId }, "background summary upgrade failed"));
+    }
   } else {
     log.error({ userId }, "doEscalate — queue entry was not created");
   }
