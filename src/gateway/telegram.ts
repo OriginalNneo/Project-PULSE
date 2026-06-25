@@ -14,7 +14,7 @@ import {
 } from "../adapters/telegram/client.js";
 import { processInbound, escalateUser, recordGuidingAnswer, type InboundChannel, type ChannelButton } from "./inbound.js";
 import { recordRating } from "../services/session/manager.js";
-import { getUserPrefs } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs } from "../db/proxy-client.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("telegram-gateway");
@@ -127,6 +127,18 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 
   const chatId = message.chat.id;
   const channel = makeChannel(chatId);
+
+  // Capture the citizen's real Telegram name so the officer dashboard can show it
+  // (instead of a hardcoded placeholder) once they escalate. Merge into prefs so
+  // language/voice settings are preserved. first_name → username → skip.
+  const from = message.from;
+  if (from) {
+    const displayName = [from.first_name, from.last_name].filter(Boolean).join(" ").trim() ||
+      (from.username ? `@${from.username}` : "");
+    if (displayName) {
+      await upsertUserPrefs({ userId: `tg:${chatId}`, display_name: displayName }).catch(() => null);
+    }
+  }
 
   // Voice note → download + base64 so the pipeline can transcribe it via HF Whisper.
   // Pass the mime_type from the Telegram voice object (more reliable than file extension).

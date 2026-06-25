@@ -1064,8 +1064,13 @@ async function doEscalate(
   const fallbackSummary = (lastUserMsg?.content?.trim() || botSummary || userMessage || "User requested a CPF officer.").slice(0, 200);
   const querySummary = presetQuerySummary?.trim() || (await summariseQueryForOfficer(chatHistory, fallbackSummary));
 
+  // Pull the citizen's real channel name (captured on inbound) so the officer dashboard
+  // shows it in place of a hardcoded placeholder. Optional — undefined → UI derives a label.
+  const displayName = (await getUserPrefs(userId).catch(() => null))?.display_name;
+
   const entry = await postToQueue({
     sessionId, userId,
+    display_name: displayName,
     emotion_score: emotion?.emotion_score ?? 50,
     emotion_label: emotion?.emotion_label ?? "neutral",
     summary: botSummary || userMessage,

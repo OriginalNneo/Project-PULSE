@@ -65,7 +65,9 @@ function buildPerson(entry) {
   const profile = MOCK_PROFILES[hashIdx(entry.queueId || entry.userId, MOCK_PROFILES.length)];
   return {
     id: entry.queueId,
-    name: 'Nathaniel Neo', // live escalated cases use a fixed name so they don't duplicate the mock samples
+    // Real channel name (Telegram first_name), captured at escalation. Falls back to a
+    // derived label (e.g. "Telegram user 1234") if the channel gave us no name.
+    name: entry.display_name || deriveName(entry.userId),
     citizenship: MOCK_C,
     language: LANG_NAME[entry.preferred_lang] || 'English',
     nric: profile.nric, age: profile.age, phone: profile.phone, dob: profile.dob, address: profile.address,

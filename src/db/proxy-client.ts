@@ -34,6 +34,7 @@ export interface PendingGuiding {
 
 export interface UserPrefs {
   userId: string;
+  display_name?: string; // the citizen's real name from the channel (e.g. Telegram first_name) — shown on the officer dashboard
   preferred_lang: string;
   voice_enabled: boolean;
   speech_rate: number;
@@ -88,6 +89,7 @@ export interface QueueEntry {
   queueId: string;
   sessionId: string;
   userId: string;
+  display_name?: string; // citizen's real channel name (e.g. Telegram first_name); falls back to a derived label in the UI
   emotion_score: number;
   emotion_label: string;
   summary: string;
