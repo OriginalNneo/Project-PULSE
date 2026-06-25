@@ -10,7 +10,7 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
 // updates over WS /dashboard/ws. In dev we call the backend directly
 // (NEXT_PUBLIC_BACKEND_URL in .env.local) because the Next proxy is unreliable.
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? '';
-const OFFICER_ID = 'sharon-lee';
+const OFFICER_ID = 'patricia-lam';
 
 // Mock fallbacks for fields the backend queue does NOT carry (identity + financials).
 const MOCK_C = 'Singapore Citizen';
@@ -185,6 +185,13 @@ Object.assign(MOCK_THREADS, {
 /* -------------------------------------------------------------- helpers --- */
 
 const fmt = (m) => (m < 1 ? 'Just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} hr ago`);
+// Compact accept→resolve duration for the AVG RESPONSE TIME card (sub-minute shows seconds).
+const fmtDuration = (ms) => {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+};
 const mask = (n) => (n ? n[0] + '\u2022\u2022\u2022\u2022' + n.slice(-3) : '');
 const colorFor = (u) => (u === 'urgent' ? '#ca2424' : u === 'medium' ? '#c98a1e' : '#1a981e');
 const tintFor = (u) => (u === 'urgent' ? 'rgba(202,36,36,.10)' : u === 'medium' ? 'rgba(201,138,30,.14)' : 'rgba(26,152,30,.12)');
@@ -229,8 +236,8 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [sort, setSort] = useState('newest');
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState(false);
-  const [resolved, setResolved] = useState(0);
-  const [stats, setStats] = useState({ waiting: 0, avg_wait_minutes: 0 });
+  const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
+  const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
   const [threads, setThreads] = useState(MOCK_THREADS);
 
   const msgRef = useRef(null);
@@ -238,6 +245,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const timer = useRef(null);
   const acceptedRef = useRef(new Set());   // locally-accepted ids (no backend "assign" route)
   const removedRef = useRef(new Set());    // locally-resolved ids (mock + live) — don't re-show on refetch
+  const acceptTimesRef = useRef(new Map()); // id → accept timestamp (ms), set once on accept; cleared on resolve
 
   useEffect(() => {
     const el = msgRef.current;
@@ -272,7 +280,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
       setIncoming([...liveInc, ...mockInc]);
       setActive([...liveAct, ...mockAct]);
       setThreads((prev) => ({ ...prev, ...liveThreads }));
-      if (data && data.stats) setStats(data.stats);
     } catch { /* keep whatever is shown on failure */ }
   }, []);
 
@@ -295,6 +302,9 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   }, [loadQueue]);
 
   const accept = useCallback((id) => {
+    // Stamp the accept time once (first accept wins) so AVG RESPONSE TIME can measure
+    // accept→resolve. Re-opening an already-accepted case must not reset the clock.
+    if (!acceptTimesRef.current.has(id)) acceptTimesRef.current.set(id, Date.now());
     acceptedRef.current.add(id);
     setIncoming((inc) => inc.filter((x) => x !== id));
     setActive((act) => (act.includes(id) ? act : [id, ...act.filter((x) => x !== id)]));
@@ -306,6 +316,14 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   // Officer marks the case resolved → drops it from the live queue (PATCH backend).
   const resolveCase = useCallback(async (id) => {
     if (!id) return;
+    // RESOLVED TODAY = every Resolve click this session. AVG RESPONSE TIME = mean of
+    // accept→resolve for cases that were accepted this session (skip ones with no accept stamp).
+    setResolved((n) => n + 1);
+    const acceptedAt = acceptTimesRef.current.get(id);
+    if (acceptedAt != null) {
+      setRespDurations((d) => [...d, Date.now() - acceptedAt]);
+      acceptTimesRef.current.delete(id);
+    }
     acceptedRef.current.delete(id);
     removedRef.current.add(id);
     setActive((act) => act.filter((x) => x !== id));
@@ -388,6 +406,10 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   ].map((m, i) => ({ ...m, right: m.from === 'user', key: i })) : [];
 
   const urgentActive = active.filter((id) => people[id].urgency === 'urgent').length;
+  // AVG RESPONSE TIME — mean accept→resolve over cases resolved this session (live, '—' until the first).
+  const avgRespLabel = respDurations.length
+    ? fmtDuration(respDurations.reduce((a, b) => a + b, 0) / respDurations.length)
+    : '—';
   const isIncoming = tab === 'incoming';
   const FILTERS = [['all', 'All'], ['urgent', 'Urgent'], ['medium', 'Medium'], ['low', 'Low']];
 
@@ -432,8 +454,8 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
             </span>Live
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 16px 4px 5px', borderRadius: 22, background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.5)' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#4749be', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>SL</div>
-            <span style={{ color: '#fff', fontWeight: 300, fontSize: 17 }}>Sharon Lee</span>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#4749be', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>PL</div>
+            <span style={{ color: '#fff', fontWeight: 300, fontSize: 17 }}>Patricia Lam</span>
           </div>
         </div>
       </div>
@@ -444,7 +466,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
             <StatCard value={String(active.length)} label="OPEN CHATS" sub={urgentActive ? `${urgentActive} urgent` : 'all calm'} subColor={urgentActive ? '#ca2424' : '#1a981e'} />
             <StatCard value={String(incoming.length)} label="INCOMING INQUIRIES" sub={incoming.length ? 'waiting now' : 'all clear'} subColor={incoming.length ? '#ca2424' : '#1a981e'} />
-            <StatCard value={`${stats.avg_wait_minutes}m`} label="AVG RESPONSE TIME" sub="live" subColor="#1a981e" />
+            <StatCard value={avgRespLabel} label="AVG RESPONSE TIME" sub={respDurations.length ? `over ${respDurations.length}` : 'live'} subColor="#1a981e" />
             <StatCard value={String(resolved)} label="RESOLVED TODAY" sub="Good!" subColor="#1a981e" />
           </div>
 
