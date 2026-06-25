@@ -107,7 +107,7 @@ async function llmTranslate(text: string, targetLang: string): Promise<string> {
         "and official scheme names recognisable.",
     },
     { role: "user", content: text },
-  ]);
+  ], { includeSoul: false, disableThinking: true });
   return (r.content ?? "").trim();
 }
 
@@ -153,14 +153,59 @@ export async function translateText(text: string, sourceLang: string, targetLang
 }
 
 // ── Language detection (text-classification via HF) ───────────────────────────
+// The 7 languages the assistant actually supports. The HF detector
+// (papluca/xlm-roberta-base-language-detection) does NOT cover ms/ta/ml/pa and mislabels
+// them (e.g. Malay → "ru"); when it returns a code outside this set we fall back to GLM.
+const APP_LANGS = new Set(["en", "zh", "ms", "ta", "hi", "ml", "pa"]);
+
+// LLM-based detection constrained to the supported set — reliable for the Latin/Indic
+// languages the HF model can't distinguish. Returns "en" if the model is unavailable.
+async function llmDetectLanguage(text: string): Promise<string> {
+  try {
+    const r = await chatComplete([
+      { role: "system", content: "Identify the language of the user's message. Reply with EXACTLY one lowercase code from this list and nothing else: en (English), zh (Chinese), ms (Malay / Bahasa Melayu), ta (Tamil), hi (Hindi), ml (Malayalam), pa (Punjabi)." },
+      { role: "user", content: text.slice(0, 500) },
+    ], { includeSoul: false, disableThinking: true });
+    const code = (r.content || "").trim().toLowerCase().match(/[a-z]{2}/)?.[0] ?? "";
+    return APP_LANGS.has(code) ? code : "en";
+  } catch {
+    return "en";
+  }
+}
+
+// Deterministic script → language for the non-Latin supported languages. Far more reliable
+// than the HF/LLM classifiers for these — the HF model confuses Tamil with Hindi and can't
+// see ms/ta/ml/pa at all. Returns null for Latin text (en vs ms), which still needs HF/LLM.
+function scriptLanguage(text: string): string | null {
+  if (/[஀-௿]/.test(text)) return "ta"; // Tamil
+  if (/[ഀ-ൿ]/.test(text)) return "ml"; // Malayalam
+  if (/[਀-੿]/.test(text)) return "pa"; // Gurmukhi (Punjabi)
+  if (/[ऀ-ॿ]/.test(text)) return "hi"; // Devanagari (Hindi)
+  if (/[㐀-䶿一-鿿]/.test(text)) return "zh"; // CJK (Chinese)
+  return null;
+}
+
 export async function detectLanguage(text: string): Promise<string> {
+  // 1) Script is deterministic for the non-Latin supported languages.
+  const byScript = scriptLanguage(text);
+  if (byScript) return byScript;
+  // 2) Latin script (en vs ms): HF detector, then LLM fallback when HF returns a code we
+  //    don't support (it mislabels Malay, e.g. → "ru").
   log.info({ model: DETECT_MODEL }, "Detecting language via HF");
-  const out = (await hfJson(DETECT_MODEL, { inputs: text })) as Array<Array<{ label: string; score: number }>>;
-  // text-classification returns [[{label, score}, ...]] sorted by score desc.
-  const top = Array.isArray(out) && Array.isArray(out[0]) ? out[0][0] : undefined;
-  const label = top?.label ?? "en";
-  // Detection models emit ISO codes (en, zh, ...) which already match our internal set.
-  return label.split(/[-_]/)[0] ?? "en";
+  try {
+    const out = (await hfJson(DETECT_MODEL, { inputs: text })) as Array<Array<{ label: string; score: number }>>;
+    // text-classification returns [[{label, score}, ...]] sorted by score desc.
+    const top = Array.isArray(out) && Array.isArray(out[0]) ? out[0][0] : undefined;
+    const label = (top?.label ?? "").split(/[-_]/)[0] ?? "";
+    if (APP_LANGS.has(label)) return label;
+    // HF returned a code we don't support (it can't tell ms/ta/ml/pa apart) → ask the LLM,
+    // constrained to the supported set, which classifies these reliably.
+    log.info({ hfLabel: label }, "HF language detect out-of-set — falling back to LLM");
+    return await llmDetectLanguage(text);
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, "HF language detect failed — falling back to LLM");
+    return await llmDetectLanguage(text);
+  }
 }
 
 // ── Emotion / sentiment classification (text-classification via HF) ───────────

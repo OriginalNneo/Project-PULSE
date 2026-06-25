@@ -116,9 +116,18 @@ function stripMarkdownForTTS(text: string): string {
     .slice(0, TTS_MAX_CHARS);
 }
 
+const OFFICER_BUTTON_LABEL = "Connect to CPF Officer";
 const OFFICER_BUTTON: ChannelButton[][] = [
-  [{ label: "🧑‍💼 Connect to CPF Officer", callbackId: "connect_officer" }],
+  [{ label: `🧑‍💼 ${OFFICER_BUTTON_LABEL}`, callbackId: "connect_officer" }],
 ];
+
+// The officer button, with its label localised to the user's language (emoji stays outside
+// the translated text). Uses the shared, cached localizeFixed.
+async function officerButtonFor(lang: Lang): Promise<ChannelButton[][]> {
+  if (lang === "en") return OFFICER_BUTTON;
+  const label = await localizeFixed(OFFICER_BUTTON_LABEL, lang).catch(() => OFFICER_BUTTON_LABEL);
+  return [[{ label: `🧑‍💼 ${label}`, callbackId: "connect_officer" }]];
+}
 
 const VOICE_CLARITY_PROMPT =
   'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. Decide if it is a usable message a real person might send — a question, request, greeting or short answer, even in Singlish or broken English. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random or repeated words, or generic off-topic filler unrelated to getting help (e.g. "Am I right?", "thank you for watching", "uh huh"). Reply with ONE word: CLEAR or UNCLEAR.';
@@ -157,7 +166,7 @@ async function sendUnclearVoiceReply(
     if (t) msg = t.translated_text;
   }
   if (channel.sendWithButtons) {
-    await channel.sendWithButtons(msg, OFFICER_BUTTON, false).catch(() => null);
+    await channel.sendWithButtons(msg, await officerButtonFor(lang as Lang), false).catch(() => null);
   } else {
     await channel.send(msg).catch(() => null);
   }
@@ -187,17 +196,23 @@ async function sendReply(
   channel: InboundChannel,
   text: string,
   escalation: { shouldEscalate: boolean; offerText: string | null },
+  lang: Lang,
   editMessageId?: string | null,
 ): Promise<void> {
   const clean = sanitizeReply(text);
   // formatReply("html") always HTML-escapes — must always send with parse_mode HTML
   // so entities like &amp; render correctly rather than showing literally.
 
-  const offerHtml = escalation.shouldEscalate && escalation.offerText
-    ? escalation.offerText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  // The offer prompt + button label are authored in English — localise both to the
+  // user's language so the whole escalation handoff is in their starting language.
+  const offerText = escalation.shouldEscalate && escalation.offerText
+    ? await localizeFixed(escalation.offerText, lang)
+    : null;
+  const offerHtml = offerText
+    ? offerText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     : null;
   const finalText = offerHtml ? `${clean}\n\n${offerHtml}` : clean;
-  const buttons = escalation.shouldEscalate ? OFFICER_BUTTON : undefined;
+  const buttons = escalation.shouldEscalate ? await officerButtonFor(lang) : undefined;
 
   // Prefer editing the "thinking" bubble in place — the dot animation becomes the
   // answer with no extra message bubble. Fall back to a fresh send if the edit fails
@@ -375,6 +390,21 @@ async function maybeTranslate(text: string, lang: Lang): Promise<string> {
   return t?.translated_text ?? text;
 }
 
+// Translate a FIXED English UI string (button label, offer prompt, …) to the user's language,
+// cached per (lang,text). These are a small bounded set, so caching keeps the GLM translate off
+// the reply critical path after the first time per language.
+const uiStringCache = new Map<string, string>();
+async function localizeFixed(text: string, lang: Lang): Promise<string> {
+  if (lang === "en" || !text) return text;
+  const key = `${lang}::${text}`;
+  let v = uiStringCache.get(key);
+  if (v == null) {
+    v = await maybeTranslate(text, lang);
+    uiStringCache.set(key, v);
+  }
+  return v;
+}
+
 /**
  * Send one guiding question (≤2 sentences, asked immediately). Expected answers
  * render as inline buttons (callback `guide:<id>:<optIndex>`): `options` for choice
@@ -445,7 +475,7 @@ async function deliverBotReply(
   // signature stability / future use.
   const plain = replyText;
   const reply = formatReply(replyText, "html");
-  await sendReply(channel, reply, escalation, editMessageId).catch((err: unknown) => log.error(err, "deliverBotReply failed"));
+  await sendReply(channel, reply, escalation, _lang, editMessageId).catch((err: unknown) => log.error(err, "deliverBotReply failed"));
   return plain;
 }
 
@@ -837,7 +867,7 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   } catch (err) {
     log.error(err, "Query pipeline failed");
     await thinking.stop();
-    await sendReply(channel, "I'm having trouble processing your request right now.", { shouldEscalate: true, offerText: "A CPF officer can assist you directly. Tap below to connect." }, thinking.messageId)
+    await sendReply(channel, "I'm having trouble processing your request right now.", { shouldEscalate: true, offerText: "A CPF officer can assist you directly. Tap below to connect." }, lang, thinking.messageId)
       .catch(() => null);
     return;
   }
@@ -895,7 +925,7 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   // Stop the thinking animation (awaits any in-flight frame so the answer edit is
   // the final write) and edit that bubble into the final reply.
   await thinking.stop();
-  await sendReply(channel, reply, escalation, thinking.messageId)
+  await sendReply(channel, reply, escalation, lang, thinking.messageId)
     .catch((err: unknown) => log.error(err, "Failed to send reply"));
 
   // ── TTS: generate and send audio reply ──────────────────────────────────────
@@ -973,6 +1003,11 @@ async function relayToOfficer(
     ts,
     emotion_score: scored.emotion_score,
     emotion_label: scored.emotion_label,
+    // Keep the citizen's original words when we auto-translated, so the officer can flip the
+    // bubble back to the original (the dashboard shows English by default, "Show original" to toggle).
+    ...(userLang !== "en" && englishText !== messageText
+      ? { original: messageText, original_lang: userLang }
+      : {}),
   }).catch(() => null);
 }
 

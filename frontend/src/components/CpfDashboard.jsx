@@ -58,6 +58,7 @@ function buildPerson(entry) {
   // The WhatsApp "Text Us" opener that starts the officer chat — carries the summary.
   const opener = {
     from: 'cust',
+    system: true, // the canned WhatsApp opener (already English) — no translate control
     text: `[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.\n\n[Summary of query]\n${summaryText}`,
   };
   const subject = summaryText.length > 48 ? summaryText.slice(0, 46).trim() + '…' : summaryText;
@@ -70,6 +71,7 @@ function buildPerson(entry) {
     name: entry.display_name || deriveName(entry.userId),
     citizenship: MOCK_C,
     language: LANG_NAME[entry.preferred_lang] || 'English',
+    langCode: entry.preferred_lang || 'en', // source language for the on-demand Translate button
     nric: profile.nric, age: profile.age, phone: profile.phone, dob: profile.dob, address: profile.address,
     urgency: urgencyFromScore(entry.priority_score != null ? entry.priority_score : (entry.emotion_score || 0)),
     sentiment: sentFromEmotion(entry.emotion_label),
@@ -79,7 +81,7 @@ function buildPerson(entry) {
     balances: profile.balances, retirement: MOCK_RET, schemes: MOCK_SCHEMES, flags: profile.flags || [],
     // Main chat = opener + post-escalation messages. Officer + citizen messages both
     // live in chat_history now, so they interleave in chronological order.
-    thread: [opener, ...post.map((m) => ({ from: isOfficer(m.role) ? 'officer' : 'cust', text: m.content }))],
+    thread: [opener, ...post.map((m) => ({ from: isOfficer(m.role) ? 'officer' : 'cust', text: m.content, translated: m.translated, translatedLang: m.translated_lang, original: m.original, originalLang: m.original_lang }))],
     // Prior AI-chatbot session → rendered in the "Chat History" tab.
     priorSession: prior.map((m) => ({ text: m.content, right: m.role === 'user' })),
     status: entry.status,
@@ -144,7 +146,7 @@ const PEOPLE = (function () {
       { from: 'cust', text: '[Summary of query]\n' + (p.summary || p.subject) },
       { from: 'officer', text: 'Dear ' + sal + ',\n\nThank you for reaching out to the CPF Board. We will connect you with a Customer Care Officer shortly.' }
     ].concat(p.q ? [{ from: 'cust', text: p.q }] : []);
-    out[p.id] = Object.assign({ citizenship: C, language: 'English', balances: dB, retirement: dR, schemes: dS, flags: [] }, p, { thread: thread });
+    out[p.id] = Object.assign({ citizenship: C, language: 'English', langCode: 'en', balances: dB, retirement: dR, schemes: dS, flags: [] }, p, { thread: thread });
   });
   return out;
 })();
@@ -222,6 +224,9 @@ const pill = (on) => ({ display: 'flex', alignItems: 'center', gap: 9, padding: 
 const seg = (on) => ({ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 20, cursor: 'pointer', fontWeight: 600, fontSize: 14.5, transition: 'all .2s', background: on ? '#fff' : 'transparent', color: on ? '#0a6160' : '#667085', boxShadow: on ? '0 1px 2px rgba(16,24,40,.12)' : 'none' });
 const statusStyleFor = (st) => ({ color: (st === 'Active' || st === 'Enrolled' || st === 'Eligible') ? '#1a981e' : '#555', fontWeight: 700, fontSize: 14 });
 const cardShadow = { boxShadow: '0 1px 2px rgba(16,24,40,.04),0 6px 16px rgba(16,24,40,.05)', border: '1px solid #ebedf0' };
+// On-demand "Translate" link under a citizen bubble, and the outbound "sent in <lang>" audit line.
+const TRANS_BTN = { marginTop: 3, border: 'none', background: 'none', cursor: 'pointer', color: '#0a6160', fontWeight: 600, fontSize: 11.5, padding: '1px 2px', fontFamily: 'inherit' };
+const SENT_IN = { marginTop: 3, fontSize: 11.5, color: '#7a7a7a', fontStyle: 'italic', maxWidth: '100%', whiteSpace: 'pre-wrap', lineHeight: 1.35 };
 
 /* ------------------------------------------------------------ component --- */
 
@@ -239,8 +244,11 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
   const [threads, setThreads] = useState(MOCK_THREADS);
+  const [translations, setTranslations] = useState({}); // original text → { translated, showing, loading, error }
+  const [showOrig, setShowOrig] = useState({}); // English text → bool: show the citizen's original instead
 
   const msgRef = useRef(null);
+  const transRef = useRef({}); // mirror of `translations` for stale-free reads inside the handler
   const replyIdx = useRef(0);
   const timer = useRef(null);
   const acceptedRef = useRef(new Set());   // locally-accepted ids (no backend "assign" route)
@@ -340,6 +348,38 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   }, []);
 
   const open = useCallback((id) => { setOpenChatId(id); setInfoTab('info'); }, []);
+
+  // For auto-translated citizen messages we already have both versions — flip locally, no fetch.
+  const toggleOrig = useCallback((key) => setShowOrig((p) => ({ ...p, [key]: !p[key] })), []);
+
+  // On-demand "Translate" for a citizen message. Caches by original text (stable across
+  // refetches); toggles original ⇄ English once fetched. Works on any message — live relay,
+  // failed translation, or untranslated pre-escalation bot history.
+  const translateMsg = useCallback(async (text, srcLang) => {
+    if (!text) return;
+    const existing = transRef.current[text];
+    if (existing && existing.translated != null) {
+      const next = { ...transRef.current, [text]: { ...existing, showing: !existing.showing } };
+      transRef.current = next; setTranslations(next);
+      return;
+    }
+    const loading = { ...transRef.current, [text]: { translated: null, showing: true, loading: true } };
+    transRef.current = loading; setTranslations(loading);
+    try {
+      const res = await fetch(`${API_BASE}/dashboard/translate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, source: srcLang || 'auto', target: 'en' }),
+      });
+      const data = res.ok ? await res.json() : null;
+      const done = { ...transRef.current, [text]: data && data.translated_text
+        ? { translated: data.translated_text, showing: true, loading: false }
+        : { translated: null, showing: false, loading: false, error: true } };
+      transRef.current = done; setTranslations(done);
+    } catch {
+      const err = { ...transRef.current, [text]: { translated: null, showing: false, loading: false, error: true } };
+      transRef.current = err; setTranslations(err);
+    }
+  }, []);
 
   const send = useCallback(async () => {
     const id = openChatId;
@@ -578,11 +618,37 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
 
               <div ref={msgRef} className="cpf-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '20px 26px 14px', display: 'flex', flexDirection: 'column', gap: 3, background: '#e9e2d9' }}>
                 <div style={{ alignSelf: 'center', background: '#fff', borderRadius: 14, padding: '5px 16px', fontSize: 13, color: '#666', boxShadow: '0 1px 1px rgba(0,0,0,.08)', marginBottom: 8 }}>Today</div>
-                {msgs.map((m) => (
-                  <div key={m.key} style={{ display: 'flex', justifyContent: m.right ? 'flex-end' : 'flex-start', padding: '4px 0', animation: 'msgIn .25s ease both' }}>
-                    <div style={{ maxWidth: '74%', padding: '12px 16px', borderRadius: m.right ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background: m.right ? '#dcf6c8' : '#ffffff', color: '#1c1c1c', fontSize: 15, lineHeight: 1.45, whiteSpace: 'pre-wrap', boxShadow: '0 1px 1px rgba(0,0,0,0.08)' }}>{m.text}</div>
-                  </div>
-                ))}
+                {msgs.map((m) => {
+                  // Auto-translated citizen message (relay kept the original) → local "Show original" toggle.
+                  const auto = !m.right && m.original && m.original !== m.text;
+                  // Otherwise, a non-English citizen message we couldn't auto-translate → on-demand translate.
+                  const onDemand = !m.right && !auto && !m.system && oc.langCode && oc.langCode !== 'en' && m.text;
+                  const tr = onDemand ? translations[m.text] : null;
+                  const showingOrig = showOrig[m.text];
+                  const body = auto
+                    ? (showingOrig ? m.original : m.text)
+                    : (tr && tr.showing && tr.translated ? tr.translated : m.text);
+                  return (
+                    <div key={m.key} style={{ display: 'flex', justifyContent: m.right ? 'flex-end' : 'flex-start', padding: '4px 0', animation: 'msgIn .25s ease both' }}>
+                      <div style={{ maxWidth: '74%', display: 'flex', flexDirection: 'column', alignItems: m.right ? 'flex-end' : 'flex-start' }}>
+                        <div style={{ padding: '12px 16px', borderRadius: m.right ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background: m.right ? '#dcf6c8' : '#ffffff', color: '#1c1c1c', fontSize: 15, lineHeight: 1.45, whiteSpace: 'pre-wrap', boxShadow: '0 1px 1px rgba(0,0,0,0.08)' }}>{body}</div>
+                        {auto && (
+                          <button onClick={() => toggleOrig(m.text)} style={TRANS_BTN}>
+                            {showingOrig ? `🌐 Show English` : `↩ Show original (${LANG_NAME[m.originalLang] || m.originalLang})`}
+                          </button>
+                        )}
+                        {onDemand && (
+                          <button onClick={() => translateMsg(m.text, oc.langCode)} style={TRANS_BTN}>
+                            {tr && tr.loading ? '🌐 Translating…' : tr && tr.error ? '⚠ Unavailable — retry' : tr && tr.showing && tr.translated ? '↩ Show original' : '🌐 Translate to English'}
+                          </button>
+                        )}
+                        {m.right && m.translated && (
+                          <span style={SENT_IN}>{`↳ sent in ${LANG_NAME[m.translatedLang] || m.translatedLang}: ${m.translated}`}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
                 {typing && (
                   <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '4px 0' }}>
                     <div style={{ background: '#fff', borderRadius: '16px 16px 16px 4px', padding: '15px 18px', display: 'flex', gap: 5, boxShadow: '0 1px 1px rgba(0,0,0,.08)' }}>
@@ -594,6 +660,11 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                 )}
               </div>
 
+              {oc.langCode && oc.langCode !== 'en' && (
+                <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 20px', background: '#eef4f4', borderTop: '1px solid #dde7e7', fontSize: 12.5, color: '#0a6160', fontWeight: 600 }}>
+                  <span>🌐</span><span>{`Type in English — replies are auto-translated to ${oc.language} before sending.`}</span>
+                </div>
+              )}
               <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: '#f4f4f4', boxShadow: '0 -2px 5px rgba(0,0,0,.1)' }}>
                 <div className="cpf-icon-btn" style={{ width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -680,11 +751,26 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.6px', padding: '4px 9px', borderRadius: 10, background: 'rgba(255,255,255,.22)' }}>AI</span>
                     </div>
                     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 5, background: '#f4f6f6' }}>
-                      {(hasOpen && oc.priorSession ? oc.priorSession : []).map((b, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: b.right ? 'flex-end' : 'flex-start', padding: '3px 0' }}>
-                          <div style={{ maxWidth: '84%', padding: '9px 13px', borderRadius: b.right ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: b.right ? '#dcf6c8' : '#e6efef', color: '#1c1c1c', fontSize: 13.5, lineHeight: 1.42, whiteSpace: 'pre-wrap', boxShadow: '0 1px 1px rgba(0,0,0,0.06)' }}>{b.text}</div>
-                        </div>
-                      ))}
+                      {(hasOpen && oc.priorSession ? oc.priorSession : []).map((b, idx) => {
+                        // Both halves of the prior bot session are in the citizen's language
+                        // (the bot replies natively), so any bubble is translatable — not just the
+                        // citizen's (b.right). Officer messages don't appear in this prior session.
+                        const canTranslate = oc.langCode && oc.langCode !== 'en' && b.text;
+                        const tr = canTranslate ? translations[b.text] : null;
+                        const body = tr && tr.showing && tr.translated ? tr.translated : b.text;
+                        return (
+                          <div key={idx} style={{ display: 'flex', justifyContent: b.right ? 'flex-end' : 'flex-start', padding: '3px 0' }}>
+                            <div style={{ maxWidth: '84%', display: 'flex', flexDirection: 'column', alignItems: b.right ? 'flex-end' : 'flex-start' }}>
+                              <div style={{ padding: '9px 13px', borderRadius: b.right ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: b.right ? '#dcf6c8' : '#e6efef', color: '#1c1c1c', fontSize: 13.5, lineHeight: 1.42, whiteSpace: 'pre-wrap', boxShadow: '0 1px 1px rgba(0,0,0,0.06)' }}>{body}</div>
+                              {canTranslate && (
+                                <button onClick={() => translateMsg(b.text, oc.langCode)} style={TRANS_BTN}>
+                                  {tr && tr.loading ? '🌐 Translating…' : tr && tr.error ? '⚠ Unavailable — retry' : tr && tr.showing && tr.translated ? '↩ Show original' : `🌐 Translate from ${oc.language}`}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 16px', background: '#fff', borderTop: '1px solid #eee' }}>
                       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#c98a1e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M5 12h12" /><path d="M13 6l6 6-6 6" /></svg>

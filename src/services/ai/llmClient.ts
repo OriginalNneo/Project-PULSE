@@ -107,12 +107,25 @@ export function llmModel(): string {
   return process.env.LLM_MODEL ?? process.env.HERMES_MODEL ?? HERMES_MODEL;
 }
 
-export async function chatComplete(messages: ChatMessage[]): Promise<{ content: string }> {
+export async function chatComplete(
+  messages: ChatMessage[],
+  opts: { includeSoul?: boolean; disableThinking?: boolean } = {},
+): Promise<{ content: string }> {
   const systemPrompt = messages.find((m) => m.role === "system")?.content ?? "";
   const history = messages
     .filter((m) => m.role !== "system")
     .slice(0, -1) as Array<{ role: "user" | "assistant"; content: string }>;
   const lastUser = messages.filter((m) => m.role === "user").at(-1);
-  const content = await callHermes(systemPrompt, lastUser?.content ?? "", history);
+  // Utility tasks (translation, language ID) MUST pass includeSoul:false — otherwise the
+  // PULSE soul preamble makes the model *answer as PULSE* instead of doing the task (e.g.
+  // returning a Tamil CPF answer instead of an English translation).
+  const content = await callHermes(
+    systemPrompt,
+    lastUser?.content ?? "",
+    history,
+    1024,
+    opts.includeSoul ?? true,
+    opts.disableThinking ? { thinking: { type: "disabled" } } : {},
+  );
   return { content };
 }

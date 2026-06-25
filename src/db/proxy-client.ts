@@ -94,7 +94,7 @@ export interface QueueEntry {
   emotion_label: string;
   summary: string;
   query_summary?: string; // clean AI summary of what the member needs (set once at escalation; not clobbered by emotion updates)
-  chat_history: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>;
+  chat_history: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string; translated?: string; translated_lang?: string; original?: string; original_lang?: string }>;
   preferred_lang: string;
   dialect_hint: string | null;
   status: "waiting" | "assigned" | "resolved";
@@ -433,7 +433,7 @@ export async function updateQueueEmotion(
 
 export async function appendToQueueHistory(
   queueId: string,
-  message: { role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string },
+  message: { role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string; translated?: string; translated_lang?: string; original?: string; original_lang?: string },
 ): Promise<void> {
   const entry = queueStore.get(queueId);
   if (!entry) return;

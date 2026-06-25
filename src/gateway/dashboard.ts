@@ -33,7 +33,7 @@ import { setOfficerStatus, listOfficers, type OfficerStatus } from "../dashboard
 import { notifyCaseResolved } from "../dashboard/notify.js";
 import { broadcast } from "./ws.js";
 import { sendWhatsAppMessage } from "../adapters/twilio/client.js";
-import { translateText } from "../python-bridge/client.js";
+import { translateText, detectLanguage } from "../python-bridge/client.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("dashboard");
@@ -109,7 +109,15 @@ router.post("/send/:queueId", async (req: Request, res: Response) => {
 
   // Persist the officer's message into the case history so it interleaves with the
   // citizen's messages in chronological order on the dashboard (and survives refetch).
-  await appendToQueueHistory(req.params.queueId!, { role: "officer", content: message, ts: new Date().toISOString() });
+  // Store the English original as content + the actually-sent translation as an audit
+  // record of what the citizen received (gov audit trail), when they differ.
+  const officerTurn: { role: string; content: string; ts: string; translated?: string; translated_lang?: string } =
+    { role: "officer", content: message, ts: new Date().toISOString() };
+  if (outboundText !== message) {
+    officerTurn.translated = outboundText;
+    officerTurn.translated_lang = entry.preferred_lang;
+  }
+  await appendToQueueHistory(req.params.queueId!, officerTurn);
 
   // Echo the sent message to all dashboard clients so other tabs stay in sync
   broadcast("officer_message", {
@@ -122,6 +130,24 @@ router.post("/send/:queueId", async (req: Request, res: Response) => {
   });
 
   res.json({ ok: true, translated_message: outboundText });
+});
+
+// POST /dashboard/translate — on-demand translation for the officer's "Translate" button.
+// Body: { text, source?, target? }. Defaults target=en; auto-detects source when omitted.
+// Used to translate a citizen's original-language message (incl. pre-escalation bot history,
+// which is stored verbatim) into English on demand, without re-fetching from the channel.
+router.post("/translate", async (req: Request, res: Response) => {
+  const { text, source, target } = req.body as { text?: string; source?: string; target?: string };
+  if (!text || !text.trim()) { res.status(400).json({ error: "text required" }); return; }
+  const tgt = (target || "en").trim();
+  let src = (source || "").trim();
+  if (!src || src === "auto") {
+    src = await detectLanguage(text).catch(() => "en");
+  }
+  if (src === tgt) { res.json({ translated_text: text, source_lang: src, target_lang: tgt }); return; }
+  const t = await translateText(text, src, tgt).catch(() => null);
+  if (!t) { res.status(502).json({ error: "translation failed" }); return; }
+  res.json({ translated_text: t.translated_text, source_lang: src, target_lang: tgt });
 });
 
 // PATCH /dashboard/resolve/:queueId — officer marks case as resolved
