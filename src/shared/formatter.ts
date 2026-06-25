@@ -74,9 +74,14 @@ function stripMarkdown(text: string): string {
  * - Numbered list items and bullet lists get proper spacing
  * - Blank lines are normalised to single separators
  */
+// Drop bullets beyond this many — a runaway-list backstop (gov-standard: scannable,
+// no walls of text). The generation prompt should already keep it to 2–4.
+const MAX_BULLETS = 6;
+
 function structureText(text: string): string {
   const lines = text.split("\n");
   const out: string[] = [];
+  let bulletCount = 0;
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i]!.trimEnd();
@@ -90,6 +95,8 @@ function structureText(text: string): string {
 
     // Bullet — normalise to • with consistent spacing
     if (/^[-–—*•]\s+/.test(line)) {
+      if (bulletCount >= MAX_BULLETS) continue; // drop extra bullets
+      bulletCount++;
       if (out.length > 0 && out[out.length - 1] !== "" && !/^[-–—*•]\s+/.test(out[out.length - 1] ?? "")) {
         out.push("");
       }
@@ -166,6 +173,40 @@ function applyHtmlBold(text: string): string {
   return out;
 }
 
+// Safety cap on reply length — backstops Telegram's 4096-char hard limit and the
+// concision budget (the generation prompt is the real concision mechanism; this
+// only catches runaways). Applied to CLEAN plain text BEFORE HTML escaping/bolding
+// so a trim can never sever an entity or <b> tag.
+const MAX_REPLY_CHARS = 900;
+
+/**
+ * Trim `text` to at most `maxChars`, cutting back to the last complete sentence.
+ * Language-agnostic: recognises Latin (.!?) AND CJK (。！？) terminators plus
+ * newlines, so it works for zh/ta/ms native replies (no word-splitting). A trailing
+ * cpf.gov.sg link is set aside before the trim and re-appended so it always survives.
+ */
+function capLength(text: string, maxChars = MAX_REPLY_CHARS): string {
+  if (text.length <= maxChars) return text;
+
+  const urlMatch = text.match(/(?:https?:\/\/)?[\w.-]*cpf\.gov\.sg\/?\S*\s*$/i);
+  const url = urlMatch ? urlMatch[0].trim() : "";
+  let body = url ? text.slice(0, text.length - urlMatch![0].length).trimEnd() : text;
+
+  const budget = maxChars - (url ? url.length + 2 : 0);
+  if (body.length > budget) {
+    body = body.slice(0, budget);
+    const sentence = body.match(/^[\s\S]*[.!?。！？\n]/);
+    if (sentence && sentence[0].trim().length > 0) {
+      body = sentence[0].trimEnd();
+    } else {
+      const sp = body.lastIndexOf(" ");
+      body = (sp > 0 ? body.slice(0, sp) : body).trimEnd() + "…";
+    }
+  }
+
+  return url ? `${body}\n${url}` : body;
+}
+
 /** Escape characters that have special meaning in Telegram HTML mode. */
 function escapeHtml(text: string): string {
   return text
@@ -183,7 +224,7 @@ function escapeHtml(text: string): string {
  * @param mode  "html" for Telegram, "plain" for TTS / plain-text channels
  */
 export function formatReply(text: string, mode: FormatMode = "html"): string {
-  const clean = normaliseWhitespace(structureText(stripMarkdown(text)));
+  const clean = capLength(normaliseWhitespace(structureText(stripMarkdown(text))));
   if (mode === "plain") return clean;
   // applyHtmlBold handles both CPF-term bolding and section-header bolding
   // in a single pass, with correct HTML escaping throughout.

@@ -6,7 +6,7 @@ export type IndianVariety = "ta-sin" | "ta-spo" | "ml" | "pa" | "hi";
 
 export type Dialect = ChineseDialect | MalayVariety | IndianVariety;
 
-export type VulnerabilityTier = "self-service" | "guided" | "high-touch";
+export type VulnerabilityTier = "self_service" | "guided" | "high_touch";
 
 export type CorrespondenceCategory = "tax" | "health" | "housing" | "employment" | "legal";
 

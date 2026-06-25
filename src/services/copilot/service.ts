@@ -3,7 +3,7 @@ import { getCustomer } from "../../data/customers/repository.js";
 import type { CustomerDetail } from "../../data/customers/types.js";
 import { searchKnowledge, searchTerminology, type KnowledgeMatch } from "../../data/knowledge/repository.js";
 import type { CpfTerm } from "../../data/docstore/types.js";
-import { chatComplete, isLlmConfigured, type ChatMessage } from "../ai/llmClient.js";
+import { chatComplete, isLlmConfigured, llmModel, type ChatMessage } from "../ai/llmClient.js";
 
 const log = createServiceLogger("copilot");
 
@@ -169,7 +169,7 @@ export async function answerQuestion(req: CopilotRequest): Promise<CopilotResult
         terminology,
         navigation,
         member: memberSummary,
-        model: result.model,
+        model: llmModel(),
         source: "llm",
         groundedInKnowledge: matches.length > 0,
       };

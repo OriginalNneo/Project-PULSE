@@ -11,7 +11,7 @@
 | **Name** | PULSE — People-centric Framework for Correspondence (PFC) |
 | **Type** | SaaS platform + AI multi-agent system |
 | **Purpose** | Transform Singapore government correspondence into adaptive, inclusive, accessible communications for vulnerable citizens |
-| **Status** | Scaffolding complete — routing, agents, frontend pages built |
+| **Status** | Live Telegram CPF assistant (RAG answers, guiding questions, gov-standard concise formatting, native-language generation, emotion-driven tone, CCU officer escalation, CSAT rating + session lifecycle) on top of the scaffolded multi-service architecture |
 | **AI Framework** | OpenClaw (custom-built) |
 | **Repository** | `project-pulse` |
 
@@ -411,6 +411,13 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | Shared contracts | Built | `src/shared/contracts/` (AI payload, escalation, friction, identity, telemetry, UI profile, validation) |
 | Testing harness | Built | `src/testing/pulseTestHarness.ts`, `tests/` (contracts, CSO alerts, telemetry, Hermes boundary, UI profile) |
 | Deploy kit | Built | `deploy/` (Caddyfile, ecosystem.config.cjs, setup-vps.sh), `DEPLOY.md` |
+| **Live Telegram bot pipeline** | Built | `src/gateway/inbound.ts`, `src/gateway/telegram.ts`, `src/agents/query/`, `src/agents/triage/`, `src/agents/escalation/` |
+| Integrated chatbot + CCU officer console | Built | `src/services/chatbot/`, `src/services/officer/`, `frontend/src/app/officer/` |
+| HF bridge (STT / translate / detect / emotion / TTS) | Built — translation via GLM fallback (HF dropped SeamlessM4T) | `src/python-bridge/`, `src/shared/hf/` |
+| Guiding questions (curated, interactive) | Built | `data/cpf-guiding-questions.json`, `src/data/knowledge/guiding.ts` |
+| Message formatting (gov-standard, native-language) | Built | `src/shared/formatter.ts`, `src/agents/query/agent.ts`, `soul.md` |
+| Emotion-driven tone adaptation (per-message + trajectory) | Built | `src/agents/main/tone.ts`, `src/agents/main/emotion.ts`, `src/agents/main/emotionTrajectory.ts`, `soul.md` |
+| CSAT rating + session lifecycle (1–5 ⭐, 24h reset) | Built | `src/services/session/manager.ts`, `src/gateway/inbound.ts`, `src/gateway/telegram.ts`, `src/services/officer/service.ts` |
 | Domain agent knowledge bases | Not started | `src/agents/domain/*/knowledge/` |
 | Language glossaries | Not started | `src/agents/language/*/glossaries/` |
 | Dialect glossaries | Not started | `src/agents/dialect/*/*/glossaries/` |
@@ -504,7 +511,53 @@ The chatbot's per-turn analysis (emotion, confidence %, urgency) drives the CPF 
 
 ### New collections (document store)
 
-`chat_sessions` — chatbot conversations + context window. `cso_escalations` — escalations surfaced to the CCU.
+`chat_sessions` — chatbot conversations + context window. `cso_escalations` — escalations surfaced to the CCU. `cpf_guiding_questions` — curated guiding-question sets (see "Guiding Questions" below).
+
+### Message formatting & language layer
+
+Bot answers follow a **government content standard** (GOV.UK content design + Singapore SGDS): front-load the answer, ≤25-word sentences, no "walls of text", scannable bullets, plain words, expand acronyms, reading age ~9. Enforced in two places:
+
+- **Generation (the real concision mechanism):** `BASE_SYSTEM_PROMPT` (`src/agents/query/agent.ts`) tells the LLM to lead with one direct sentence, stay under ~120 words (lead + 2–4 short bullets), begin with **one** topic emoji (💰/🏠/🏥/📅/ℹ️) — minimal/professional, no decoration — quote exact figures, and end with the cpf.gov.sg link.
+- **Deterministic formatter (`src/shared/formatter.ts`, language-agnostic):** `formatReply` keeps strip→structure→escape→bold, plus a **bullet cap (≤6)** and **`capLength` (~900 chars, applied BEFORE escape/bold)** that trims to the last complete sentence — Latin `.!?` **and CJK `。！？`** — preserving a trailing cpf.gov.sg URL. Backstops Telegram's 4096 limit; emojis pass through.
+
+**Language: native generation.** The LLM generates **directly in the user's language** (rule 7 + the `Respond in: <lang>` hint; `detectLanguage` selects it). The two calls that re-translated the LLM's *own* reply were removed — translating a native reply would double-translate. The deterministic formatter is language-agnostic, so emojis + `$`/`%` bolding survive.
+
+**`translateText` resilient (HF → LLM fallback).** HF migrated to "Inference Providers" and **de-listed SeamlessM4T-v2** from the free `hf-inference` provider (hard 400). `src/python-bridge/client.ts` `translateText` now tries HF first, then **falls back to the LLM (GLM)** — validated clean zh/ms/ta. This keeps officer↔citizen relay, guided-question text, and UI-string translation working. The translation feature + cache are otherwise untouched.
+
+**Emotion-driven tone.** The same per-message sentiment (`scoreEmotion` → 0–100 + neutral/sad/frustrated/angry/rage) that drives the dashboard + escalation now also **adapts the query bot's tone**. `src/agents/main/tone.ts` `toneDirective(score,label,sustained)` returns a self-contained tier directive (null for neutral) that `buildSystemPrompt` injects into the query prompt; the policy also lives in `soul.md` ("Adapting your tone"). (The `sustained` flag is set by the trajectory layer below.) `inbound.ts` awaits the current-turn emotion just before `runQueryAgent` (it's pre-running, so ~0 added latency) and passes it in. Angrier callers get a **warmer, less-formal, empathy-first, de-escalating** reply that still **gives the full answer + figures** (tone softens, content doesn't — a false high-emotion read must not strip the answer) and never names the caller's emotion back to them. The emotion **tier is part of the response-cache key** (else a soothing reply would be served from a neutral cache entry). Caveat: `detectEmotion` is English-trained, so tone is most reliable for English/Singlish.
+
+**Trajectory layer (adaptability).** On top of the per-message read, `inbound.ts` folds this turn together with the recent emotional trajectory of the conversation into one **effective emotion** (`src/agents/main/emotionTrajectory.ts` `effectiveEmotion`) before calling `runQueryAgent`, so the bot reacts to the *trend* ("getting angrier"), not just the latest message. Rule: trajectory only ever **raises** soothing, never lowers it below the current message — `effectiveScore = max(currentScore, recencyWeightedAvg(recent + current))`. So a real spike soothes immediately, a caller who cooled-but-was-just-hot stays soothed (safe direction), and a single stray spike in calm history decays away (recency-weighted, current dominates). The recent scores come only from **scored** user turns in the conversation history (the guided-questions path stores unscored turns — filtered out). A `sustained` flag (≥2 of last 3 user turns above the angry band) adds an "ongoing difficulty" acknowledgement via a `toneDirective` branch and is keyed into the response cache. Cold start (0–1 prior turns) ≈ current message, so turn 1 is unchanged. Pure-function behaviour (rising/falling/spike-in-calm/cold-start/sustained) is unit-tested in `emotionTrajectory.test.ts`. Trajectory smoothing **reduces noise** (false spikes); it does **not** correct the English model's systematic under-read of zh/ms/ta. Escalation stays in `analyzeEscalation` (a sustained-anger→officer rule is a possible follow-up, deliberately out of the tone layer).
+
+**CSAT rating + session lifecycle.** A bot chat has no natural "end", so `src/services/session/manager.ts` gives it one. A per-user in-memory **session** record tracks `lastActivityAt` (refreshed each turn via `touchSession` in `inbound.ts`). The session ENDS and the bot sends a **1–5 ⭐ rating prompt** (Telegram inline keyboard `rate:<sessionId>:<n>`; WhatsApp = "reply 1–5" text, since Twilio has no buttons) when: (1) a CCU officer closes the case (`closeSession` → `endSession(userId,"officer",{queueId})`, which replaces the old plain close message), or (2) the customer signals they're done — a short, question-free sign-off (`isClosingMessage`, English/Singlish heuristic) **or** the `/end` command. The star tap is handled in `telegram.ts` (`recordRating`): it stores the rating, ties it to the escalated case via `setQueueRating` (so the officer dashboard shows CSAT — `rating` field on `QueueEntry`, Mongo-persisted), broadcasts `rating_received`, sends a thank-you, and **resets the chat**. **Reset** (`resetSession`) clears the conversation history + interaction flags so the next message starts fresh. The session model owns the conversation history (moved out of `inbound.ts` so officer-close/satisfied/timeout can all reset from one place). A **24h inactivity sweep** (`startSessionTimeoutSweep`, started in `gateway/index.ts`, every 30 min) **silently resets** idle sessions — no rating ping for someone who already left. Sessions + bot-only ratings are **in-memory** (lost on restart, which also drops live 24h timers); escalated-case ratings survive via the Mongo-backed queue. The closing-phrase detector is English/Singlish only — non-English users end via `/end` or the timeout. Pure logic (`isClosingMessage`, `isSessionExpired`, sweep, stale-tap rejection) unit-tested in `manager.test.ts`.
+
+### Guiding Questions (interactive Telegram answers)
+
+Broad questions need personalising before a useful answer is possible (e.g. "How much CPF LIFE payout will I get?" depends on the user's age, plan and target sum). Instead of a generic one-shot reply, the bot runs an **interactive slot-filling flow**: classify the topic → pull a curated guiding-question set from MongoDB → ask the questions **one at a time** → synthesise a tailored answer from the user's replies. The bot can't read the user's account, so it *asks*.
+
+**When it triggers.** Only when the triage classifier (`classifyQuery`) returns **Category 2** (broad/personalised) AND the query's topic has a guiding set AND the user isn't asking for an officer AND emotion ≤ 70 (a distressed user routes to the normal escalation path instead). Specific factual questions (Cat-1, e.g. "what is the Full Retirement Sum?") and personal-account questions (Cat-3) are unaffected.
+
+**Flow** (`src/gateway/inbound.ts`):
+```
+Cat-2 question
+  → findGuidingSetForQuery(text)            # topic = searchKnowledge top-1 sectionKey → matching set
+      → set prefs.pendingGuiding{questions, answers:[], index:0, knowledge captured once}
+      → ask Question 1 immediately          # NO preamble; reclaims the 💭 thinking bubble into Q1
+Each following message is intercepted (before the LLM):
+  → recordGuidingAnswer() records it, advances index
+      → more questions? send next one       # ≤2 sentences. choice→buttons (guide:<id>:<idx>);
+                                             #   open→inline "(for example: …)"; "or type your answer"
+      → all answered? synthesizeGuidedAnswer(knowledge + Q&A, lang) → tailored reply (user's language)
+                       + officer button (Cat-2 boundary still applies) + clear pendingGuiding
+```
+Escape hatches mid-flow: an explicit officer/human request escalates; "cancel"/"stop" exits. A bare "yes"/"ok" is treated as an *answer* (not an officer request), via the stricter `isExplicitOfficerRequest`.
+
+**Curated, keyed by topic.** Sets live in `data/cpf-guiding-questions.json` (fields: `topicKey`, `aliases`, `title`, `intro`, `questions[{id,text,type,options}]`, `synthesisHint`) → seeded into `cpf_guiding_questions` by `npm run db:seed`. The LLM ("Hermes" = `callHermes`, z.ai GLM) only classifies the topic and writes the final answer — no question generation, so no structured-output dependency.
+
+**Section-key drift (important).** The knowledge store's `sectionKey` vocabulary differs across environments: the committed `data/cpf-knowledge.json` uses `retirement-income`/`growing-savings`/`home-ownership`, but the **live Atlas** currently holds a different dataset using `retirement`/`topups`/`housing`. Each guiding set carries an `aliases` list so it matches **whichever vocabulary is loaded** — `findGuidingSetForQuery` matches `topicKey` OR any alias. ⚠️ Do **not** run `npm run db:seed` from this dev checkout expecting the live Atlas knowledge to match the seed file — they have diverged; re-seeding replaces shared Atlas knowledge.
+
+**Trigger coverage.** Cat-2 regexes in `src/agents/triage/classifier.ts` are brittle on word adjacency (e.g. "how much **CPF LIFE** payout" slipped past the old patterns). Looser patterns were added for the guided topics; when adding a topic, extend/verify `CAT2_PATTERNS` and trace phrasings through `classifyQuery`.
+
+**State** (`pendingGuiding` on the in-memory `UserPrefs`) does not survive a backend restart — same trade-off as `pendingOfficerOffer`. Key files: `src/data/knowledge/guiding.ts` (retrieval), `src/agents/query/guidedSynthesis.ts` (synthesis), `src/gateway/inbound.ts` (state machine), `src/gateway/telegram.ts` (`guide:*` button routing).
 
 ### Backend endpoints
 
@@ -529,7 +582,23 @@ POST  /api/v1/officer/escalations/:escalationId/acknowledge
 
 ### Frontend: `/officer` (CPF Queries Dashboard)
 
-`frontend/src/app/officer/page.tsx` — the CCU officer console: live stat cards (open chats, incoming, avg response, resolved today), Open Chats grid (emotion chip + confidence bar + urgency dot), Incoming Queries rail, Inactive Chats, and a conversation drawer with the AI context window + a reply box that sends back over Telegram/WhatsApp. Polls every 4s. Linked in the top nav as **CCU Dashboard**.
+`frontend/src/app/officer/page.tsx` — the CCU officer console: live stat cards (open chats, incoming, avg response, resolved today), Open Chats grid (emotion chip + confidence bar + urgency dot), Incoming Queries rail, Inactive Chats, and a conversation drawer with three panes — left **CHAT HISTORY** (citizen↔bot, with per-message sentiment chips), middle live officer↔citizen thread + reply box, right **member profile** ("Singpass record"). Replies are delivered back over Telegram/WhatsApp.
+
+**Live monitoring (WebSocket).** The dashboard subscribes to `/dashboard/ws` for instant updates; the 4s poll is the fallback. The backend broadcasts `{ event, payload, ts }` — clients MUST read `event` (not `type`). Events: `new_queue_entry`, `queue_updated`, `officer_assigned`, `case_resolved`, `user_message`, `officer_message`, `emotion_update`, `rating_received` (1–5 ⭐ CSAT submitted; payload `{ userId, sessionId, queueId, stars, reason, channel, ts }`). NOTE: the socket connects DIRECT to the backend `:3000` (it bypasses the Next `/api/*` proxy), so in production the reverse proxy must also forward `/dashboard/ws` or live push silently degrades to polling.
+
+**Button → dashboard handover.** When the citizen taps **Connect to CPF Officer** in Telegram, `escalateUser` (`src/gateway/inbound.ts`) creates the queue entry and the case appears on the dashboard immediately. From then on the bot stops answering: every further Telegram message hits the active-queue relay branch and is forwarded to the officer (auto-translated to English), and the officer's replies from the dashboard are translated back and sent to Telegram — same chat session, human instead of bot. Opening a case auto-`acknowledge`s it (`waiting → assigned`), moving it from the Incoming rail to Open Chats. The auto-acknowledgement "Message received — an officer will reply shortly" is sent ONLY while the case is still `waiting` (un-picked-up); once an officer is engaged (`assigned`), the citizen's messages relay **silently** so the bot doesn't interrupt the live officer conversation.
+
+**Telegram webhook requirement.** The escalation button is an inline button → its press is a `callback_query` update. The webhook MUST be registered with `allowed_updates` including `callback_query` (`["message","edited_message","callback_query"]`) or button presses are silently dropped and nobody can escalate. `npm run post` (POST.md) verifies and auto-repairs this.
+
+**Seeding member data.** `npm run db:seed` generates ~150 random members; `npm run db:seed:named` (`src/scripts/seed-named.ts`) inserts a fixed set of hand-specified members with explicit OA/SA/MA balances (additive + idempotent). Both write to `SQLITE_PATH` from `.env` (default `./data/pulse-customers.db`) — seed scripts MUST `import "dotenv/config"` or they write to the wrong DB file.
+
+**"Thinking" animation (bot reply wait).** While the LLM/query pipeline composes a reply (often 30–90s), the Telegram bot shows a 💭 dot hopping left→right, editing ONE bubble (~2s/frame) plus the native "typing…" action. When the answer is ready that same bubble is edited into the final reply (with the officer button when escalating) — no extra bubbles. Code: `src/gateway/thinking.ts` (`startThinking` → `{ messageId, stop }`), `InboundChannel.sendForEdit`/`editMessage`/`deleteMessage`/`typing` (Telegram implements; WhatsApp degrades to typing-only), and `editTelegramMessage`/`sendChatAction` in the Telegram client. Best-effort throughout (a glitch never drops a reply); a max-lifetime timer guarantees the interval can't run forever. Interval is ~2s deliberately — Telegram allows ~1 edit/sec/chat, and the final answer is also an edit to that chat.
+
+**Sentiment.** Emotion is scored per message during the bot phase AND on relayed post-escalation messages (HF text + audio emotion → `scoreEmotion`, 0–100). Scores ride along on each user turn in the case history and render as chips; `emotion_score > 70` auto-offers the officer button.
+
+**Member profile.** `getConversation` (`src/services/officer/service.ts`) builds the right panel via `resolveMemberProfile` (SQLite customer store), guarded so a missing/un-seeded DB falls back to a minimal record instead of a 500. Anonymous Telegram users get a representative record labelled "Representative record (demo)", and the real `tg:<chatId>` is surfaced. Seed real customer data with `npm run db:migrate && npm run db:seed`.
+
+Linked in the top nav as **CCU Dashboard**.
 
 New env vars: `AI_PROVIDER`, `HERMES_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`, `MESSAGING_CHANNEL`, `TELEGRAM_MODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OFFICER_CHAT_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`.
 
@@ -543,6 +612,7 @@ New env vars: `AI_PROVIDER`, `HERMES_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`
 | [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md) | Complete AI agent system specification — agents, communication, OpenClaw integration, safety |
 | [CONTEXT.md](./CONTEXT.md) | This file — consolidated quick reference |
 | [DEPLOY.md](./DEPLOY.md) | VPS deployment guide — Caddy reverse proxy, PM2 ecosystem, setup script |
+| [POST.md](./POST.md) | Backend Power-On Self-Test — `npm run post`; run on every backend start/restart |
 | [adaptive-service-architecture-documentation.md](./adaptive-service-architecture-documentation.md) | Adaptive service architecture deep-dive — friction, telemetry, CSO alerts, Hermes integration |
 
 ---

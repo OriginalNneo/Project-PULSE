@@ -7,6 +7,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { attachWebSocket } from "./ws.js";
 import { startQueueRefreshTimer } from "../dashboard/queue.js";
+import { startSessionTimeoutSweep } from "../services/session/manager.js";
 import { initQueue } from "../db/proxy-client.js";
 import { webhookRoutes } from "./webhook.js";
 import { telegramRoutes } from "./telegram.js";
@@ -32,9 +33,19 @@ import { scoreEmotion } from "../agents/main/emotion.js";
 import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
 import type { ApiResponse } from "../shared/types/index.js";
+import { LanguageSchema, DialectSchema, ResponseFormatSchema } from "../shared/types/schemas.js";
 import type { Request, Response } from "express";
+import type { MainAgentContext } from "../agents/main/agent.js";
 
 const log = createServiceLogger("gateway");
+
+function resolveCtx(req: Request): MainAgentContext {
+  return {
+    userId: req.auth?.userId ?? "anonymous",
+    tenantId: req.auth?.tenantId ?? "default",
+    vulnerabilityTier: req.auth?.vulnerabilityTier ?? "self_service",
+  };
+}
 const app = express();
 
 app.use(helmet());
@@ -113,14 +124,10 @@ app.use("/webhook", telegramRoutes);
 // CCU officer dashboard REST endpoints — internal tool, no JWT required
 app.use("/dashboard", dashboardRoutes);
 
-// ── Shared schema building blocks ─────────────────────────────────────────────
-const DialectEnum = z.enum([
-  "zh-hok", "zh-can", "zh-teo", "zh-hak", "zh-hai",
-  "ms-bms", "ms-joh", "ms-boy", "ms-jav",
-  "ta-sin", "ta-spo", "ml", "pa", "hi",
-]);
-const LanguageEnum = z.enum(["en", "zh", "ms", "ta", "hi", "ml", "pa"]);
-const ResponseFormatEnum = z.enum(["text", "audio", "both"]);
+// ── Shared schema aliases (imported from src/shared/types/schemas.ts) ──────────
+const DialectEnum = DialectSchema;
+const LanguageEnum = LanguageSchema;
+const ResponseFormatEnum = ResponseFormatSchema;
 
 // ── POST /transcribe — voice → text (main agent → transcriber + translator subagents) ──
 const TranscribeSchema = z.object({
@@ -135,7 +142,6 @@ const TranscribeSchema = z.object({
 app.post("/transcribe", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = TranscribeSchema.safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
-  const auth = req.auth;
   const result = await runMainAgent(
     {
       type: "transcribe",
@@ -146,11 +152,7 @@ app.post("/transcribe", async (req: Request, res: Response<ApiResponse>) => {
       targetLanguage: parsed.data.targetLanguage,
       responseFormat: parsed.data.responseFormat,
     },
-    {
-      userId: auth?.userId ?? "anonymous",
-      tenantId: auth?.tenantId ?? "default",
-      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
-    },
+    resolveCtx(req),
   );
   res.json({ data: result });
 });
@@ -167,7 +169,6 @@ const TextInputSchema = z.object({
 app.post("/translate", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = TextInputSchema.safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
-  const auth = req.auth;
   const result = await runMainAgent(
     {
       type: "translate",
@@ -177,11 +178,7 @@ app.post("/translate", async (req: Request, res: Response<ApiResponse>) => {
       targetLanguage: parsed.data.targetLanguage,
       responseFormat: parsed.data.responseFormat,
     },
-    {
-      userId: auth?.userId ?? "anonymous",
-      tenantId: auth?.tenantId ?? "default",
-      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
-    },
+    resolveCtx(req),
   );
   res.json({ data: result });
 });
@@ -190,14 +187,9 @@ app.post("/translate", async (req: Request, res: Response<ApiResponse>) => {
 app.post("/detect", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = z.object({ text: z.string().min(1).max(5000) }).safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
-  const auth = req.auth;
   const result = await runMainAgent(
     { type: "detect", text: parsed.data.text },
-    {
-      userId: auth?.userId ?? "anonymous",
-      tenantId: auth?.tenantId ?? "default",
-      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
-    },
+    resolveCtx(req),
   );
   res.json({ data: { detectedLanguage: result.detectedLanguage } });
 });
@@ -238,7 +230,6 @@ const QuerySchema = z.object({
 app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
   const parsed = QuerySchema.safeParse(req.body);
   if (!parsed.success) throw new ValidationError("Invalid request body", { issues: parsed.error.issues });
-  const auth = req.auth;
   const { message, conversationHistory, language } = parsed.data;
   const messages = [
     ...conversationHistory.map((m) => ({ ...m, timestamp: m.timestamp ?? new Date().toISOString() })),
@@ -246,11 +237,7 @@ app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
   ];
   const result = await runMainAgent(
     { type: "query", messages, language },
-    {
-      userId: auth?.userId ?? "anonymous",
-      tenantId: auth?.tenantId ?? "default",
-      vulnerabilityTier: auth?.vulnerabilityTier ?? "self-service",
-    },
+    resolveCtx(req),
   );
   res.json({ data: result });
 });
@@ -262,6 +249,7 @@ const server = http.createServer(app);
 
 attachWebSocket(server);
 startQueueRefreshTimer();
+startSessionTimeoutSweep(); // 24h-inactivity chat reset
 
 server.listen(PORT, () => {
   log.info({ port: PORT, env: process.env.NODE_ENV }, "PULSE Gateway started");

@@ -19,3 +19,14 @@ export function notifyCaseResolved(queueId: string): void {
 export function notifyOfficerStatusChange(officerId: string, status: string): void {
   broadcast("officer_status_change", { officerId, status });
 }
+
+export function notifyRatingReceived(payload: {
+  userId: string;
+  sessionId: string;
+  queueId: string | null;
+  stars: number;
+  reason: string;
+  channel: string;
+}): void {
+  broadcast("rating_received", { ...payload, ts: new Date().toISOString() });
+}

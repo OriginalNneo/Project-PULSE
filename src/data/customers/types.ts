@@ -1,10 +1,11 @@
 /** Domain types for the SQLite customer / identity store. */
 
+import type { Language, VulnerabilityTier } from "../../shared/types/language.js";
+export type { Language, VulnerabilityTier };
+
 export type AgeBracket = "under_35" | "35_to_54" | "55_to_64" | "65_plus";
 export type ResidentialStatus = "citizen" | "pr";
-export type Language = "en" | "zh" | "ms" | "ta";
 export type DigitalLiteracy = "low" | "medium" | "high";
-export type VulnerabilityTier = "self_service" | "guided" | "high_touch";
 export type EmploymentStatus =
   | "employed"
   | "self_employed"

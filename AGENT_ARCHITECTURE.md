@@ -4,6 +4,8 @@
 
 This document defines the full architecture for PULSE's AI agent system, built on the **OpenClaw** framework. The system uses a hierarchical multi-agent model where a central orchestrator routes users to domain-specialist agents, which in turn invoke language agents to contextualise terminology in the user's preferred language.
 
+> **Blueprint vs. live system.** This is the target design. The **running Telegram bot** currently uses a leaner **query-agent RAG pipeline** (`src/agents/query/`): transcribe → triage → retrieve CPF knowledge → generate a concise, native-language answer with trajectory-aware emotion-driven tone → escalate to a CCU officer when needed → ask for a 1–5 ⭐ satisfaction rating when the session ends (officer close / customer done / 24h idle reset). The orchestrator + domain/language/dialect agents below are scaffolded for the full vision. See **CONTEXT.md** for what is actually implemented today.
+
 ---
 
 ## Table of Contents

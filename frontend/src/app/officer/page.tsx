@@ -85,8 +85,9 @@ export default function OfficerPage() {
       const ws = new WebSocket(`${proto}//${host}/dashboard/ws`);
       ws.onmessage = (ev) => {
         try {
-          const { type } = JSON.parse(ev.data) as { type: string };
-          if (["emotion_update","new_queue_entry","queue_updated","case_resolved","officer_assigned","officer_message","user_message"].includes(type)) {
+          // Backend broadcasts { event, payload, ts } — read `event` (not `type`).
+          const { event } = JSON.parse(ev.data) as { event: string };
+          if (["emotion_update","new_queue_entry","queue_updated","case_resolved","officer_assigned","officer_message","user_message"].includes(event)) {
             void refresh();
           }
         } catch { /* ignore */ }
@@ -265,6 +266,31 @@ function ConversationDetail({ sessionId, onClose, onChanged }: {
     return () => clearInterval(id);
   }, [load]);
 
+  // Take the case the moment the officer opens it: waiting → assigned (the "state change").
+  const ackedRef = useRef(false);
+  useEffect(() => {
+    if (ackedRef.current) return;
+    ackedRef.current = true;
+    officerApi.acknowledge(sessionId, OFFICER_NAME).then(onChanged).catch(() => {});
+  }, [sessionId, onChanged]);
+
+  // Live push: refresh this conversation the instant the citizen or another officer
+  // sends a message on this session — no 4s polling lag.
+  useEffect(() => {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const host = location.protocol === "https:" ? location.host : `${location.hostname}:3000`;
+    const ws = new WebSocket(`${proto}//${host}/dashboard/ws`);
+    ws.onmessage = (ev) => {
+      try {
+        const { event, payload } = JSON.parse(ev.data) as { event: string; payload?: { queueId?: string } };
+        if (["user_message", "officer_message", "queue_updated"].includes(event) && payload?.queueId === sessionId) {
+          void load();
+        }
+      } catch { /* ignore */ }
+    };
+    return () => ws.close();
+  }, [sessionId, load]);
+
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [conv]);
@@ -321,6 +347,9 @@ function ConversationDetail({ sessionId, onClose, onChanged }: {
             {botTurns.map((t, i) => (
               <div key={i} className={t.role === "user" ? styles.histUser : styles.histBot}>
                 {t.content}
+                {t.role === "user" && t.emotion_score != null && (
+                  <SentimentChip score={t.emotion_score} label={t.emotion_label} />
+                )}
               </div>
             ))}
             {botTurns.length === 0 && <p className={styles.histEmpty}>No prior chatbot history.</p>}
@@ -332,7 +361,12 @@ function ConversationDetail({ sessionId, onClose, onChanged }: {
       <section className={styles.convPane}>
         <div className={styles.convHead}>
           <button className={styles.backBtn} onClick={onClose} aria-label="Back to dashboard">←</button>
-          <h2 className={styles.convName}>{session?.displayName ?? "Loading…"}</h2>
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+            <h2 className={styles.convName}>{session?.displayName ?? "Loading…"}</h2>
+            {session?.channelUserId && (
+              <span style={{ fontSize: 11, opacity: 0.6, fontFamily: "monospace" }}>{session.channelUserId}</span>
+            )}
+          </div>
           <button className={styles.convClose} onClick={close} disabled={busy}>Close Session</button>
         </div>
 
@@ -358,6 +392,9 @@ function ConversationDetail({ sessionId, onClose, onChanged }: {
               }
             >
               {turn.content}
+              {turn.role === "user" && turn.emotion_score != null && (
+                <SentimentChip score={turn.emotion_score} label={turn.emotion_label} />
+              )}
             </div>
           ))}
           {liveTurns.length === 0 && <p className={styles.histEmpty}>No messages yet.</p>}
@@ -422,6 +459,19 @@ function MemberPanel({ profile: p }: { profile: import("../../lib/officer/types"
         {p.flags.map((f, i) => <li key={i}>{f}</li>)}
       </ul>
     </>
+  );
+}
+
+function SentimentChip({ score, label }: { score: number; label?: string }) {
+  const color = score > 70 ? "#c0392b" : score > 40 ? "#b58a00" : "#2e7d32";
+  const name = label ? label[0].toUpperCase() + label.slice(1) : "Sentiment";
+  return (
+    <span
+      style={{ display: "block", marginTop: 4, fontSize: 11, fontWeight: 600, color, opacity: 0.85 }}
+      title={`Sentiment score ${score}/100`}
+    >
+      ☻ {name} · {score}
+    </span>
   );
 }
 

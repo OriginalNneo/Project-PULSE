@@ -842,6 +842,18 @@ Done. Zero existing service code was touched.
 
 ## Key Features
 
+### Live Implementation — Telegram CPF Assistant
+The running prototype is a multilingual **Telegram bot** for CPF Board enquiries (full detail in [CONTEXT.md](./CONTEXT.md)):
+- **RAG answers** grounded in a MongoDB CPF knowledge base, with citations and a deterministic fallback.
+- **Government-standard formatting** — concise, scannable, front-loaded answers (GOV.UK / Singapore SGDS), generated **natively** in the user's language (English, Mandarin, Malay, Tamil, Hindi, Malayalam, Punjabi, Singlish), with a GLM translation fallback for relay/UI.
+- **Interactive guiding questions** — for broad, personal questions the bot asks a few short questions (buttons or typed), then tailors the answer.
+- **Emotion-driven tone** — replies soften (warmer, less formal, empathy-first) for upset callers to reduce escalation, without dropping any facts. Tone adapts to the **trajectory** of the conversation, not just the latest message: as a caller gets angrier across turns the bot gets steadily more soothing (it only ever raises warmth, never strips the answer).
+- **Human escalation** — complex / personal / distressed cases hand off to a CCU officer via a live dashboard, with two-way translated relay.
+- **Voice** — speech-to-text in, text-to-speech out.
+- **Satisfaction rating** — when a chat ends (officer closes the case, the customer signals they're done, or `/end`), the bot asks for a **1–5 ⭐ rating** and resets the chat; sessions left idle for 24h reset automatically.
+
+*The features below describe the broader PULSE framework vision; the bot above is the implemented slice.*
+
 ### Adaptive Communication Flows
 - Dynamically adjust message complexity, channel, and language based on detected user needs.
 - A/B testing framework for readability and engagement optimisation.

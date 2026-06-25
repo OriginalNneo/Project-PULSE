@@ -1,6 +1,7 @@
 import { createServiceLogger } from "../shared/logger.js";
 import { ExternalServiceError } from "../shared/errors.js";
 import { hfJson, hfBinary, hfRawOut } from "../shared/hf/client.js";
+import { chatComplete } from "../services/ai/llmClient.js";
 
 const log = createServiceLogger("hf-bridge");
 
@@ -86,25 +87,69 @@ export async function transcribeDialect(
   return { ...result, language: dialectCode };
 }
 
-// ── Translation (NLLB-200 via HF) ─────────────────────────────────────────────
+// Human-readable language names for the LLM translation fallback.
+const LANG_NAMES: Record<string, string> = {
+  en: "English", zh: "Chinese (Simplified)", ms: "Malay", ta: "Tamil",
+  hi: "Hindi", ml: "Malayalam", pa: "Punjabi", yue: "Cantonese",
+};
+
+// LLM (GLM) translation — provider-independent fallback used when HF can't serve
+// the translation model (HF dropped SeamlessM4T-v2 from the hf-inference provider).
+async function llmTranslate(text: string, targetLang: string): Promise<string> {
+  const name = LANG_NAMES[targetLang] ?? targetLang;
+  const r = await chatComplete([
+    {
+      role: "system",
+      content:
+        `You are a professional translator. Translate the user's text into ${name}. ` +
+        "Output ONLY the translation — no notes, no quotes, no romanisation. " +
+        "Preserve numbers, currency, percentages, URLs and emoji exactly, and keep \"CPF\" " +
+        "and official scheme names recognisable.",
+    },
+    { role: "user", content: text },
+  ]);
+  return (r.content ?? "").trim();
+}
+
+// ── Translation (HF SeamlessM4T-v2, with LLM fallback) ────────────────────────
+// HF migrated to "Inference Providers" and de-listed SeamlessM4T-v2 from the free
+// hf-inference provider (hard 400). We try HF first (still works if HF_TRANSLATE_MODEL
+// points at a served model), then fall back to the LLM so translation stays up
+// regardless of HF's model availability.
 export async function translateText(text: string, sourceLang: string, targetLang: string): Promise<TranslateResult> {
-  if (sourceLang === targetLang) {
+  if (sourceLang === targetLang || !text.trim()) {
     return { translated_text: text, source_lang: sourceLang, target_lang: targetLang };
   }
-  log.info({ sourceLang, targetLang, model: TRANSLATE_MODEL }, "Translating text via HF (SeamlessM4T-v2)");
-  const out = await hfJson(TRANSLATE_MODEL, {
-    inputs: text,
-    parameters: { src_lang: toSeamless(sourceLang), tgt_lang: toSeamless(targetLang) },
-  });
-  // Parse defensively — Seamless serverless output shape varies across deployments.
-  const first = Array.isArray(out) ? out[0] : out;
-  const translated =
-    (first as { translation_text?: string; generated_text?: string; text?: string })?.translation_text ??
-    (first as { generated_text?: string })?.generated_text ??
-    (first as { text?: string })?.text ??
-    "";
-  if (!translated) throw new ExternalServiceError("hf", "translation returned empty text");
-  return { translated_text: translated, source_lang: sourceLang, target_lang: targetLang };
+
+  try {
+    log.info({ sourceLang, targetLang, model: TRANSLATE_MODEL }, "Translating text via HF (SeamlessM4T-v2)");
+    const out = await hfJson(TRANSLATE_MODEL, {
+      inputs: text,
+      parameters: { src_lang: toSeamless(sourceLang), tgt_lang: toSeamless(targetLang) },
+    });
+    // Parse defensively — Seamless serverless output shape varies across deployments.
+    const first = Array.isArray(out) ? out[0] : out;
+    const translated =
+      (first as { translation_text?: string; generated_text?: string; text?: string })?.translation_text ??
+      (first as { generated_text?: string })?.generated_text ??
+      (first as { text?: string })?.text ??
+      "";
+    if (translated) {
+      return { translated_text: translated, source_lang: sourceLang, target_lang: targetLang };
+    }
+    throw new ExternalServiceError("hf", "translation returned empty text");
+  } catch (hfErr) {
+    log.warn({ sourceLang, targetLang, err: (hfErr as Error).message }, "HF translate failed — falling back to LLM");
+    const llm = await llmTranslate(text, targetLang).catch((e) => {
+      log.error({ err: (e as Error).message }, "LLM translate fallback failed");
+      return "";
+    });
+    if (llm) {
+      return { translated_text: llm, source_lang: sourceLang, target_lang: targetLang };
+    }
+    // Both failed — throw so callers (which already .catch) degrade to the original text.
+    throw new ExternalServiceError("translate", "HF and LLM translation both failed");
+  }
 }
 
 // ── Language detection (text-classification via HF) ───────────────────────────

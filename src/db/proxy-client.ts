@@ -6,11 +6,31 @@
  */
 import { MongoClient } from "mongodb";
 import { searchKnowledge, searchTerminology } from "../data/knowledge/repository.js";
+import type { GuidingQuestion } from "../data/docstore/types.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("db");
 
 // ── Types (kept identical to the old proxy-client contract) ──────────────────
+
+/**
+ * In-flight guiding-questions session. Set when a broad (Cat-2) query lands on a
+ * topic with a curated guiding set; cleared when all questions are answered (or
+ * the user escapes). Like `pendingOfficerOffer`, this lives in the in-memory
+ * prefsStore and does NOT survive a backend restart — a restart mid-flow just
+ * drops the user back to normal answering.
+ */
+export interface PendingGuiding {
+  topicKey: string;
+  title: string;
+  questions: GuidingQuestion[];
+  answers: Array<{ id: string; question: string; answer: string }>;
+  index: number;
+  originalQuery: string;
+  knowledge: string;
+  synthesisHint?: string;
+  lang: string;
+}
 
 export interface UserPrefs {
   userId: string;
@@ -20,6 +40,7 @@ export interface UserPrefs {
   accessibility_mode: string;
   pendingOfficerOffer?: boolean;
   preferred_dialect?: string;
+  pendingGuiding?: PendingGuiding;
 }
 
 export interface SlangEntry {
@@ -69,7 +90,7 @@ export interface QueueEntry {
   emotion_score: number;
   emotion_label: string;
   summary: string;
-  chat_history: Array<{ role: string; content: string; ts: string }>;
+  chat_history: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>;
   preferred_lang: string;
   dialect_hint: string | null;
   status: "waiting" | "assigned" | "resolved";
@@ -77,6 +98,7 @@ export interface QueueEntry {
   assigned_at: string | null;
   priority_score: number;
   created_at: string;
+  rating?: number; // 1–5 CSAT score, set when the citizen rates after the case closes
 }
 
 export interface QueueStats {
@@ -330,6 +352,25 @@ export async function resolveQueueEntry(queueId: string): Promise<QueueEntry | n
   return updated;
 }
 
+/**
+ * Attach a CSAT rating (1–5) to a (usually resolved) queue entry so the officer
+ * dashboard can show how the citizen rated the handled case. The entry stays in
+ * queueStore after resolution (resolveQueueEntry keeps it), so the in-memory patch
+ * works; the write also dual-persists to MongoDB.
+ */
+export async function setQueueRating(queueId: string, rating: number): Promise<QueueEntry | null> {
+  const entry = queueStore.get(queueId);
+  let updated: QueueEntry | null = null;
+  if (entry) {
+    updated = { ...entry, rating };
+    queueStore.set(queueId, updated);
+  }
+  getPulseCollection("ccu_queue")
+    .then((col) => col?.updateOne({ queueId }, { $set: { rating } }))
+    .catch((err) => log.warn({ err }, "Failed to persist queue rating in MongoDB"));
+  return updated;
+}
+
 export async function updateQueuePriority(queueId: string, priorityScore: number): Promise<QueueEntry | null> {
   const entry = queueStore.get(queueId);
   if (!entry) return null;
@@ -374,7 +415,7 @@ export async function updateQueueEmotion(
 
 export async function appendToQueueHistory(
   queueId: string,
-  message: { role: string; content: string; ts: string },
+  message: { role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string },
 ): Promise<void> {
   const entry = queueStore.get(queueId);
   if (!entry) return;
@@ -424,5 +465,5 @@ export const saveConversationLog = async (l: {
   emotion_log: Array<{ ts: string; score: number; label: string }>;
 }): Promise<typeof l & { created_at: string }> => ({ ...l, created_at: new Date().toISOString() });
 
-export const getConversationLog = async (_sessionId: string) => [];
+export const getConversationLog = async (_sessionId: string): Promise<Array<{ messages: Array<{ role: string; content: string }> }>> => [];
 export const getSessionsByUser = async (_userId: string): Promise<SessionRecord[]> => [];

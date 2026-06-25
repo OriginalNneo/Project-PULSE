@@ -17,6 +17,7 @@ import { buildCustomerFromInput } from "../../data/customers/factory.js";
 import type { CorrespondenceCase } from "../../data/customers/types.js";
 import { knowledgeStats, listDocuments, listSections, listTerminology, searchKnowledge } from "../../data/knowledge/repository.js";
 import { isLlmConfigured, llmModel } from "../ai/llmClient.js";
+import { LanguageSchema } from "../../shared/types/schemas.js";
 
 const router = Router();
 
@@ -73,7 +74,7 @@ const newCustomerSchema = z.object({
   age: z.number().int().min(18).max(100),
   gender: z.enum(["M", "F"]).optional(),
   residentialStatus: z.enum(["citizen", "pr"]).optional(),
-  preferredLanguage: z.enum(["en", "zh", "ms", "ta"]).optional(),
+  preferredLanguage: LanguageSchema.optional(),
   dialect: z.string().nullable().optional(),
   employmentStatus: z.enum(["employed", "self_employed", "platform_worker", "retired", "unemployed"]).optional(),
   digitalLiteracy: z.enum(["low", "medium", "high"]).optional(),
@@ -124,7 +125,7 @@ const newCaseSchema = z.object({
   summary: z.string().min(3),
   priority: z.enum(["low", "medium", "high"]).default("medium"),
   channel: z.enum(["web", "chat", "voice", "sms", "mail"]).default("web"),
-  language: z.enum(["en", "zh", "ms", "ta"]).default("en"),
+  language: LanguageSchema.default("en"),
 });
 
 router.post("/cases", (req: Request, res: Response<ApiResponse>) => {

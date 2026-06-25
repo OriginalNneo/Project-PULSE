@@ -3,6 +3,7 @@ import { z } from "zod";
 import { NotFoundError, ValidationError } from "../../shared/errors.js";
 import type { ApiResponse, PaginatedResponse, Correspondence } from "../../shared/types/index.js";
 import type { AuthenticatedRequest } from "../../shared/types/index.js";
+import { LanguageSchema } from "../../shared/types/schemas.js";
 
 const router = Router();
 
@@ -19,7 +20,7 @@ const CreateCorrespondenceSchema = z.object({
   title: z.string().min(1).max(500),
   body: z.string().min(1),
   channels: z.array(z.enum(["physical", "sms", "voice", "email", "in-app"])).min(1),
-  language: z.enum(["en", "zh", "ms", "ta"]).default("en"),
+  language: LanguageSchema.default("en"),
 });
 
 router.get("/", async (req: Request, res: Response<PaginatedResponse<Correspondence>>) => {

@@ -2,7 +2,7 @@ import "dotenv/config";
 import { clearAll, insertCustomerBundle, migrate, stats } from "../data/customers/repository.js";
 import { closeDb } from "../data/sqlite/connection.js";
 import { resetDocumentStore } from "../data/docstore/index.js";
-import { knowledgeStats, loadKnowledgeFile, seedKnowledge } from "../data/knowledge/repository.js";
+import { knowledgeStats, loadKnowledgeFile, seedKnowledge, loadGuidingQuestionsFile, seedGuidingQuestions } from "../data/knowledge/repository.js";
 import { createServiceLogger } from "../shared/logger.js";
 import { generateCustomers } from "./personas.js";
 
@@ -28,6 +28,10 @@ async function main(): Promise<void> {
   const k = await seedKnowledge(file);
   log.info(k, "Seeded CPF knowledge into document store");
 
+  const guidingFile = loadGuidingQuestionsFile();
+  const g = await seedGuidingQuestions(guidingFile);
+  log.info(g, "Seeded CPF guiding questions into document store");
+
   const ks = await knowledgeStats();
 
   console.log("\n=== PULSE seed complete ===");
@@ -37,6 +41,7 @@ async function main(): Promise<void> {
   console.log(`By age bracket:   ${JSON.stringify(s.byAgeBracket)}`);
   console.log(`By support tier:  ${JSON.stringify(s.byTier)}`);
   console.log(`Knowledge store:  backend=${ks.backend} sections=${ks.sections} documents=${ks.documents} terminology=${ks.terminology}`);
+  console.log(`Guiding topics:   ${g.topics}`);
   console.log("===========================\n");
 }
 

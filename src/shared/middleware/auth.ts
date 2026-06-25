@@ -23,7 +23,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
       tenantId: decoded.tenantId,
       roles: decoded.roles,
       language: (decoded.language as Language) ?? "en",
-      vulnerabilityTier: (decoded.vulnerabilityTier as VulnerabilityTier) ?? "self-service",
+      vulnerabilityTier: (decoded.vulnerabilityTier as VulnerabilityTier) ?? "self_service",
     };
 
     next();
@@ -52,7 +52,7 @@ function verifyToken(token: string): { sub: string; tenantId: string; roles: str
       tenantId: "dev-tenant",
       roles: ["user", "admin"],
       language: "en",
-      vulnerabilityTier: "self-service",
+      vulnerabilityTier: "self_service",
     };
   }
 

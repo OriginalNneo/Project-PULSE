@@ -1,0 +1,79 @@
+{
+  "version": "2026.2",
+  "topics": [
+    {
+      "topicKey": "retirement-income",
+      "aliases": ["retirement"],
+      "title": "Retirement payouts (CPF LIFE)",
+      "questions": [
+        {
+          "id": "age",
+          "text": "To estimate your CPF LIFE payout, may I ask how old you are now?",
+          "type": "open",
+          "example": "63",
+          "hint": "Age affects when payouts can start and which options apply."
+        },
+        {
+          "id": "plan",
+          "text": "Which CPF LIFE plan are you considering?",
+          "type": "choice",
+          "options": ["Standard", "Basic", "Escalating", "Not sure"]
+        },
+        {
+          "id": "sum",
+          "text": "Which retirement sum are you planning for?",
+          "type": "choice",
+          "options": ["Basic Retirement Sum", "Full Retirement Sum", "Enhanced Retirement Sum", "Not sure"]
+        }
+      ],
+      "synthesisHint": "Use the member's stated age, chosen CPF LIFE plan and retirement-sum target to tailor the explanation of monthly payouts and when they can begin. Quote payout figures, ages and sums only from the retrieved CPF information. If they answered 'Not sure', briefly explain the options so they can decide."
+    },
+    {
+      "topicKey": "growing-savings",
+      "aliases": ["topups", "growing"],
+      "title": "Growing your CPF savings (top-ups)",
+      "questions": [
+        {
+          "id": "goal",
+          "text": "Happy to help you grow your CPF savings. What is your main goal?",
+          "type": "choice",
+          "options": ["Bigger retirement payouts", "Tax relief", "Help a family member", "Not sure"]
+        },
+        {
+          "id": "account",
+          "text": "Which account are you thinking of topping up?",
+          "type": "choice",
+          "options": ["My own Special/Retirement Account", "My MediSave", "A family member's account", "Not sure"]
+        },
+        {
+          "id": "age",
+          "text": "And how old are you now?",
+          "type": "open",
+          "example": "58",
+          "hint": "Age affects whether savings go to the Special or Retirement Account and matched-scheme eligibility."
+        }
+      ],
+      "synthesisHint": "Use the member's goal, the account they want to top up and their age to tailor the explanation of top-up options (RSTU cash top-ups, MediSave top-ups, matched schemes, tax relief). Quote interest rates, caps and relief limits only from the retrieved CPF information."
+    },
+    {
+      "topicKey": "home-ownership",
+      "aliases": ["housing"],
+      "title": "Using CPF for housing",
+      "questions": [
+        {
+          "id": "propertyType",
+          "text": "Happy to help with using CPF for your home. What type of home are you buying?",
+          "type": "choice",
+          "options": ["HDB BTO (new flat)", "HDB resale", "Private property", "Not sure"]
+        },
+        {
+          "id": "firstHome",
+          "text": "Is this your first property?",
+          "type": "choice",
+          "options": ["Yes, my first property", "No, I have owned one before", "Not sure"]
+        }
+      ],
+      "synthesisHint": "Use the property type and whether it is their first property to tailor the explanation of how CPF can be used for the purchase, downpayment and monthly instalments, and explain accrued interest that must be refunded on sale. Quote limits and percentages only from the retrieved CPF information."
+    }
+  ]
+}

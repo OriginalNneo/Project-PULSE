@@ -19,8 +19,10 @@
     "test:a11y": "cd frontend && npm run test:a11y",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:seed": "tsx src/scripts/seed.ts",
+    "db:seed:named": "tsx src/scripts/seed-named.ts",
     "start:backend": "tsx src/gateway/index.ts",
-    "start:frontend": "cd frontend && npx next start -p 3001"
+    "start:frontend": "cd frontend && npx next start -p 3001",
+    "post": "bash scripts/post.sh"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

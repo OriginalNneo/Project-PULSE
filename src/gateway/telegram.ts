@@ -2,13 +2,19 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import {
   sendTelegramMessage,
+  sendTelegramMessageReturningId,
+  editTelegramMessage,
+  deleteTelegramMessage,
+  sendChatAction,
   sendTelegramAudio,
   answerCallbackQuery,
   getFileBase64,
   type TelegramUpdate,
   type InlineKeyboard,
 } from "../adapters/telegram/client.js";
-import { processInbound, escalateUser, type InboundChannel, type ChannelButton } from "./inbound.js";
+import { processInbound, escalateUser, recordGuidingAnswer, type InboundChannel, type ChannelButton } from "./inbound.js";
+import { recordRating } from "../services/session/manager.js";
+import { getUserPrefs } from "../db/proxy-client.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("telegram-gateway");
@@ -24,6 +30,19 @@ function makeChannel(chatId: number): InboundChannel {
       return sendTelegramMessage(chatId, text, { inline_keyboard }, html);
     },
     sendVoice: (audioBase64, mimeType) => sendTelegramAudio(chatId, audioBase64, mimeType),
+    // ── In-place editing (powers the "thinking" dot animation) ──
+    sendForEdit: async (text, html) => {
+      const id = await sendTelegramMessageReturningId(chatId, text, undefined, html);
+      return id != null ? String(id) : null;
+    },
+    editMessage: (messageId, text, buttons, html) => {
+      const replyMarkup = buttons
+        ? { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.label, callback_data: b.callbackId }))) }
+        : undefined;
+      return editTelegramMessage(chatId, Number(messageId), text, replyMarkup, html);
+    },
+    deleteMessage: (messageId) => deleteTelegramMessage(chatId, Number(messageId)),
+    typing: () => sendChatAction(chatId, "typing"),
   };
 }
 
@@ -39,13 +58,18 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 
     if (cq.from.is_bot) { log.info("callback_query from bot — ignored"); return; }
 
+    const isOfficer = cq.data === "connect_officer";
+    const isGuide = cq.data?.startsWith("guide:") ?? false;
+    const isRate = cq.data?.startsWith("rate:") ?? false;
+
     // Instant toast via the callback ack — appears client-side before any chat message.
-    // Stale query (>60s) will 400 but that's non-fatal; escalation still completes.
-    void answerCallbackQuery(cq.id, "⏳ Connecting you to a CPF officer…").catch((e: unknown) => {
+    // Stale query (>60s) will 400 but that's non-fatal; the action still completes.
+    const ackText = isOfficer ? "⏳ Connecting you to a CPF officer…" : isRate ? "🙏 Thanks for your feedback!" : "✓ Got it";
+    void answerCallbackQuery(cq.id, ackText).catch((e: unknown) => {
       if (e instanceof Error) log.warn({ err: e.message }, "answerCallbackQuery failed (non-fatal)");
     });
 
-    if (cq.data === "connect_officer") {
+    if (isOfficer) {
       if (!cq.message) {
         log.warn({ fromId: cq.from.id }, "connect_officer callback_query has no message object — cannot get chatId");
         return;
@@ -55,6 +79,42 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       const channel = makeChannel(chatId);
       await escalateUser(channel, `tg:${chatId}`);
       log.info({ chatId }, "escalateUser completed");
+    } else if (isGuide) {
+      // guide:<questionId>:<optIndex> — a guiding-question choice button.
+      // Resolve the option's English text from the user's in-flight guiding set,
+      // then route it through the same path as a typed answer.
+      if (!cq.message) {
+        log.warn({ fromId: cq.from.id }, "guide callback_query has no message object — cannot get chatId");
+        return;
+      }
+      const chatId = cq.message.chat.id;
+      const userId = `tg:${chatId}`;
+      const [, qid, idxStr] = (cq.data ?? "").split(":");
+      const prefs = await getUserPrefs(userId).catch(() => null);
+      const q = prefs?.pendingGuiding?.questions.find((x) => x.id === qid);
+      const optionText = (q?.options ?? q?.quickReplies)?.[Number(idxStr)];
+      if (!optionText) {
+        log.info({ userId, data: cq.data }, "guide callback — no matching pending option (stale button?)");
+        return;
+      }
+      log.info({ userId, qid, optionText }, "Guiding choice button pressed");
+      await recordGuidingAnswer(makeChannel(chatId), userId, optionText);
+    } else if (isRate) {
+      // rate:<sessionId>:<stars> — a CSAT star button at session end.
+      if (!cq.message) {
+        log.warn({ fromId: cq.from.id }, "rate callback_query has no message object — cannot get chatId");
+        return;
+      }
+      const chatId = cq.message.chat.id;
+      const userId = `tg:${chatId}`;
+      const [, sid, starStr] = (cq.data ?? "").split(":");
+      const stars = Number(starStr);
+      const result = await recordRating(userId, sid ?? "", stars);
+      if (result.ok) {
+        // Strip the keyboard + confirm in place so the user can't re-rate.
+        await editTelegramMessage(chatId, cq.message.message_id, result.thankYou ?? `Thank you for rating us ${stars}⭐!`).catch(() => null);
+      }
+      log.info({ userId, sid, stars, ok: result.ok }, "CSAT rating button pressed");
     } else {
       log.info({ data: cq.data }, "callback_query data not handled");
     }

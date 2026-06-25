@@ -2,20 +2,38 @@ import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory } from "../db/proxy-client.js";
+import { findGuidingSetForQuery } from "../data/knowledge/guiding.js";
+import { synthesizeGuidedAnswer } from "../agents/query/guidedSynthesis.js";
+import type { GuidingQuestion } from "../data/docstore/types.js";
 import { translateText, synthesizeSpeech, detectLanguage, detectEmotion, detectAudioEmotion } from "../python-bridge/client.js";
 import { scoreEmotion, type ScoredEmotion } from "../agents/main/emotion.js";
+import { effectiveEmotion } from "../agents/main/emotionTrajectory.js";
+import {
+  touchSession,
+  getActiveSession,
+  endSession,
+  recordRating,
+  resetSession,
+  getHistory,
+  appendHistory,
+  clearHistory,
+  isClosingMessage,
+} from "../services/session/manager.js";
 import { notifyNewQueueEntry } from "../dashboard/notify.js";
 import { formatReply, containsHtml } from "../shared/formatter.js";
 import { analyzeEscalation } from "../agents/escalation/analyzer.js";
 import { classifyQuery } from "../agents/triage/classifier.js";
 import { broadcast } from "./ws.js";
 import { pushEmotionEvent, getLatestEmotionForUser } from "./dashboard.js";
+import { startThinking } from "./thinking.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("inbound");
 
-// Per-user rolling conversation history — cleared when the user escalates to an officer
-const conversationHistoryStore = new Map<string, Array<{ role: string; content: string; ts: string }>>();
+// Per-user rolling conversation history now lives in services/session/manager.ts
+// (getHistory/appendHistory/clearHistory) so that session reset — on officer close,
+// customer-satisfied, or the 24h timeout — can clear it from one place. User turns
+// still carry the per-message sentiment score for the officer dashboard timeline.
 
 type Lang = Language;
 
@@ -33,6 +51,15 @@ export interface InboundChannel {
   send: (text: string, html?: boolean) => Promise<void>;
   sendWithButtons?: (text: string, buttons: ChannelButton[][], html?: boolean) => Promise<void>;
   sendVoice?: (audioBase64: string, mimeType: string) => Promise<void>;
+  // ── Optional in-place editing (Telegram) — powers the "thinking" animation ──
+  /** Send a message and return its id so it can be edited later. Null if unsupported/failed. */
+  sendForEdit?: (text: string, html?: boolean) => Promise<string | null>;
+  /** Edit a previously sent message in place, optionally attaching buttons. Returns success. */
+  editMessage?: (messageId: string, text: string, buttons?: ChannelButton[][], html?: boolean) => Promise<boolean>;
+  /** Delete a previously sent message (clears a stale thinking bubble on fallback). */
+  deleteMessage?: (messageId: string) => Promise<void>;
+  /** Show a transient native "typing…" indicator. */
+  typing?: () => Promise<void>;
 }
 
 export interface InboundMessage {
@@ -53,6 +80,21 @@ function isOfficerConfirmation(text: string): boolean {
   const t = text.toLowerCase().trim();
   return OFFICER_AFFIRMATIONS.has(t) || t.startsWith("yes") || t.includes("officer") || t.includes("connect me");
 }
+
+// Stricter than isOfficerConfirmation — used DURING the guiding-questions flow,
+// where a bare "yes"/"ok" is a legitimate answer to a yes/no question and must
+// NOT be misread as "connect me to an officer". Only explicit human/officer
+// wording escapes the guiding flow.
+function isExplicitOfficerRequest(text: string): boolean {
+  const t = text.toLowerCase();
+  // Whole-word-ish so a free-text answer like "my property agent" or "urgent"
+  // doesn't trip escalation mid-flow.
+  return /\bofficer/.test(t) || /\bagent/.test(t) || /\bhuman\b/.test(t)
+    || t.includes("real person") || t.includes("speak to") || t.includes("connect me");
+}
+
+// Mid-flow "stop" words that cancel the guiding-questions flow.
+const GUIDING_CANCEL = /^(cancel|stop|never ?mind|nvm|forget it|forget this|quit|exit)\b/i;
 
 // Strips Telegram/Markdown formatting and truncates so MMS-TTS receives clean plain text.
 // MMS-TTS reads markup characters aloud and chokes on very long inputs.
@@ -95,17 +137,29 @@ async function sendReply(
   channel: InboundChannel,
   text: string,
   escalation: { shouldEscalate: boolean; offerText: string | null },
+  editMessageId?: string | null,
 ): Promise<void> {
   const clean = sanitizeReply(text);
   // formatReply("html") always HTML-escapes — must always send with parse_mode HTML
   // so entities like &amp; render correctly rather than showing literally.
 
-  if (escalation.shouldEscalate && channel.sendWithButtons) {
-    const offerHtml = escalation.offerText
-      ? escalation.offerText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      : null;
-    const withOffer = offerHtml ? `${clean}\n\n${offerHtml}` : clean;
-    await channel.sendWithButtons(withOffer, OFFICER_BUTTON, true);
+  const offerHtml = escalation.shouldEscalate && escalation.offerText
+    ? escalation.offerText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    : null;
+  const finalText = offerHtml ? `${clean}\n\n${offerHtml}` : clean;
+  const buttons = escalation.shouldEscalate ? OFFICER_BUTTON : undefined;
+
+  // Prefer editing the "thinking" bubble in place — the dot animation becomes the
+  // answer with no extra message bubble. Fall back to a fresh send if the edit fails
+  // (e.g. message too old) after clearing the stale bubble.
+  if (editMessageId && channel.editMessage) {
+    const ok = await channel.editMessage(editMessageId, finalText, buttons, true).catch(() => false);
+    if (ok) return;
+    await channel.deleteMessage?.(editMessageId).catch(() => {});
+  }
+
+  if (buttons && channel.sendWithButtons) {
+    await channel.sendWithButtons(finalText, buttons, true);
   } else {
     await channel.send(clean, true);
   }
@@ -193,6 +247,9 @@ const HELP_MESSAGE = `<b>PULSE Commands</b>
 /dialect hainanese — Hainanese (uses Cantonese voice)
 /dialect off — reset to standard language voice
 
+<b>End chat</b>
+/end — finish this chat and rate your experience (1–5 ⭐)
+
 <b>Notes</b>
 • Send a voice note — I'll transcribe and reply in your language
 • Language is auto-detected from what you type
@@ -209,6 +266,13 @@ function isStartCommand(text: string): boolean {
 function isHelpCommand(text: string): boolean {
   const t = text.toLowerCase().trim();
   return t === "/help" || t === "help";
+}
+
+// Explicit "I'm done" command. Only the slash form — a bare "end"/"done" could be a
+// legitimate guiding-flow answer, so natural sign-offs are handled by isClosingMessage
+// AFTER the guiding intercept instead.
+function isEndCommand(text: string): boolean {
+  return text.toLowerCase().trim() === "/end";
 }
 
 // Returns "on", "off", or null if the message is not a voice-toggle command.
@@ -253,6 +317,146 @@ function parseDialectCommand(text: string): { code: string | null } | null {
   }
   const code = DIALECT_ALIASES[arg] ?? null;
   return { code };
+}
+
+async function maybeTranslate(text: string, lang: Lang): Promise<string> {
+  if (lang === "en" || !text) return text;
+  const t = await translateText(text, "en", lang).catch(() => null);
+  return t?.translated_text ?? text;
+}
+
+/**
+ * Send one guiding question (≤2 sentences, asked immediately). Expected answers
+ * render as inline buttons (callback `guide:<id>:<optIndex>`): `options` for choice
+ * questions, `quickReplies` for open ones. Open questions also show an inline
+ * example, and the user can always type a free answer. When `editMessageId` is
+ * given the question is edited into that bubble (e.g. the "thinking" bubble for
+ * Q1) with a fallback to a fresh send.
+ */
+async function sendGuidingQuestion(
+  channel: InboundChannel,
+  q: GuidingQuestion,
+  lang: Lang,
+  editMessageId?: string | null,
+): Promise<void> {
+  const buttonSource = q.type === "choice" ? q.options : q.quickReplies;
+  const hasButtons = Boolean(buttonSource?.length && channel.sendWithButtons);
+
+  // Compose the prompt (question + example + how-to-answer hint).
+  const parts = [q.text];
+  if (q.example && q.type !== "choice") parts.push(`(for example: ${q.example})`);
+  parts.push(hasButtons ? "Tap an option below, or just type your answer." : "Just type your answer.");
+
+  // Translate the prompt AND every button label CONCURRENTLY — a non-English
+  // question would otherwise fire N+1 sequential LLM round-trips (slow for the
+  // seniors this serves). maybeTranslate is a no-op for English. Indices are
+  // preserved so the guide:<id>:<idx> callback still resolves the right option.
+  const labelSources = hasButtons ? buttonSource! : [];
+  const [text, ...labels] = await Promise.all([
+    maybeTranslate(parts.join("\n"), lang),
+    ...labelSources.map((s) => maybeTranslate(s ?? "", lang)),
+  ]);
+
+  const buttons: ChannelButton[][] = [];
+  for (let i = 0; i < labelSources.length; i++) {
+    if (labelSources[i] === undefined) continue;
+    buttons.push([{ label: labels[i]!, callbackId: `guide:${q.id}:${i}` }]);
+  }
+
+  // Prefer editing an existing bubble (Q1 reclaims the thinking bubble); fall back
+  // to a fresh send if the edit fails (mirrors sendReply's stale-bubble fallback).
+  if (editMessageId && channel.editMessage) {
+    const ok = await channel.editMessage(editMessageId, text, buttons.length ? buttons : undefined, false).catch(() => false);
+    if (ok) return;
+    await channel.deleteMessage?.(editMessageId).catch(() => null);
+  }
+
+  if (buttons.length && channel.sendWithButtons) {
+    await channel.sendWithButtons(text, buttons, false).catch(() => null);
+  } else {
+    await channel.send(text, false).catch(() => null);
+  }
+}
+
+/**
+ * Translate (if needed) → HTML-format → send a bot reply, reusing the same
+ * pieces as the normal answer path. Returns the plain (pre-format) text so the
+ * caller can record it in conversation history.
+ */
+async function deliverBotReply(
+  channel: InboundChannel,
+  replyText: string,
+  _lang: Lang,
+  escalation: { shouldEscalate: boolean; offerText: string | null },
+  editMessageId?: string | null,
+): Promise<string> {
+  // The LLM already generates in the user's language (native generation), so we do
+  // NOT translate the reply here — that would double-translate. _lang is kept for
+  // signature stability / future use.
+  const plain = replyText;
+  const reply = formatReply(replyText, "html");
+  await sendReply(channel, reply, escalation, editMessageId).catch((err: unknown) => log.error(err, "deliverBotReply failed"));
+  return plain;
+}
+
+/**
+ * Record the user's answer to the current guiding question and advance the flow.
+ * SELF-CONTAINED: fetches its own prefs/lang so it can be called from either the
+ * typed path (processInbound) or the inline-button path (telegram.ts callback) —
+ * the button path never goes through processInbound and has no shared locals.
+ */
+export async function recordGuidingAnswer(channel: InboundChannel, userId: string, answerText: string): Promise<void> {
+  const prefs = await getUserPrefs(userId).catch(() => null);
+  const pg = prefs?.pendingGuiding;
+  if (!prefs || !pg) return; // not in guiding mode — nothing to record
+
+  const lang = (prefs.preferred_lang || "en") as Lang;
+  const currentQ = pg.questions[pg.index];
+  if (!currentQ) {
+    await upsertUserPrefs({ ...prefs, pendingGuiding: undefined }).catch(() => null);
+    return;
+  }
+
+  const answers = [...pg.answers, { id: currentQ.id, question: currentQ.text, answer: answerText }];
+  const nextIndex = pg.index + 1;
+
+  // More questions remain → ask the next one.
+  const nextQ = pg.questions[nextIndex];
+  if (nextQ) {
+    await upsertUserPrefs({ ...prefs, pendingGuiding: { ...pg, answers, index: nextIndex } }).catch(() => null);
+    await sendGuidingQuestion(channel, nextQ, lang);
+    return;
+  }
+
+  // All answered → synthesise the tailored answer. Clear guiding + arm the typed
+  // officer-offer (the personal-account boundary still applies after personalising).
+  await upsertUserPrefs({ ...prefs, pendingGuiding: undefined, pendingOfficerOffer: true }).catch(() => null);
+  log.info({ userId, topicKey: pg.topicKey, answers: answers.length }, "Guiding flow complete — synthesising answer");
+
+  const thinking = await startThinking(channel);
+  const replyText = await synthesizeGuidedAnswer({
+    originalQuery: pg.originalQuery,
+    topicTitle: pg.title,
+    qa: answers.map((a) => ({ question: a.question, answer: a.answer })),
+    knowledge: pg.knowledge,
+    synthesisHint: pg.synthesisHint,
+    language: lang,
+  });
+  await thinking.stop();
+
+  const escalation = {
+    shouldEscalate: true,
+    offerText: "For your specific situation, a CPF officer can give you a personalised answer based on your account. Tap below to connect.",
+  };
+  const plain = await deliverBotReply(channel, replyText, lang, escalation, thinking.messageId);
+
+  // Record in the rolling history so an officer (if escalated next) sees context.
+  const guidedSummary = `[Guided: ${pg.title}] ${pg.originalQuery} — ${answers.map((a) => `${a.question} → ${a.answer}`).join("; ")}`;
+  appendHistory(
+    userId,
+    { role: "user", content: guidedSummary, ts: new Date().toISOString() },
+    { role: "agent", content: plain, ts: new Date().toISOString() },
+  );
 }
 
 export async function processInbound(channel: InboundChannel, msg: InboundMessage): Promise<void> {
@@ -303,6 +507,11 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
 
   log.info({ userId, channel: channel.prefix, voiceInput }, "Inbound message");
 
+  // Mark activity — starts a session on first contact, refreshes the 24h idle timer
+  // thereafter. (An awaiting_rating session is left as-is; the rating intercept below
+  // owns that transition.)
+  touchSession(userId, channel.prefix);
+
   // ── /start and /help ─────────────────────────────────────────────────────────
   if (isStartCommand(messageText)) {
     await channel.send(START_MESSAGE, true).catch(() => null);
@@ -310,6 +519,17 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   }
   if (isHelpCommand(messageText)) {
     await channel.send(HELP_MESSAGE, true).catch(() => null);
+    return;
+  }
+
+  // ── /end — explicit "I'm done", ask for a rating ─────────────────────────────
+  if (isEndCommand(messageText)) {
+    if (getHistory(userId).length > 0) {
+      await endSession(userId, "satisfied", { lang });
+    } else {
+      await resetSession(userId);
+      await channel.send("Chat reset. Ask me anything about CPF whenever you're ready.").catch(() => null);
+    }
     return;
   }
 
@@ -340,6 +560,23 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     return;
   }
 
+  // ── CSAT rating intercept ────────────────────────────────────────────────────
+  // If the session is awaiting a rating, a bare 1–5 is the rating (the WhatsApp
+  // path + a typed reply on Telegram). Anything else means the user came back with
+  // a new request — close the rating window (rating skipped) and start fresh.
+  const ratingSession = getActiveSession(userId);
+  if (ratingSession?.status === "awaiting_rating") {
+    const m = messageText.trim().match(/^([1-5])$/);
+    if (m) {
+      const result = await recordRating(userId, ratingSession.sessionId, Number(m[1]));
+      if (result.ok && result.thankYou) await channel.send(result.thankYou).catch(() => null);
+      return;
+    }
+    await resetSession(userId);
+    touchSession(userId, channel.prefix); // begin a fresh session for this message
+    // fall through — handle messageText as a normal new query
+  }
+
   // ── Officer confirmation path ────────────────────────────────────────────────
   if (prefs.pendingOfficerOffer && isOfficerConfirmation(messageText)) {
     await upsertUserPrefs({ ...prefs, pendingOfficerOffer: false }).catch(() => null);
@@ -360,7 +597,49 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   );
   if (activeEntry) {
     await relayToOfficer(activeEntry.queueId, userId, messageText, lang);
-    await channel.send("Message received — an officer will reply shortly.").catch(() => null);
+    // Only auto-acknowledge while the case is still QUEUED (no officer yet). Once an
+    // officer has picked it up (status "assigned"), relay silently — don't spam the
+    // citizen with "an officer will reply shortly" during a live officer conversation.
+    if (activeEntry.status === "waiting") {
+      await channel.send("Message received — an officer will reply shortly.").catch(() => null);
+    }
+    return;
+  }
+
+  // ── Guiding-questions answer intercept ───────────────────────────────────────
+  // If the user is mid-flow answering guiding questions, this message is an answer,
+  // not a new query. Escape hatches: an explicit officer request escalates; an
+  // explicit cancel exits. Everything else is recorded as the current answer.
+  if (prefs.pendingGuiding) {
+    if (isExplicitOfficerRequest(messageText)) {
+      await upsertUserPrefs({ ...prefs, pendingGuiding: undefined, pendingOfficerOffer: false }).catch(() => null);
+      await doEscalate(channel, userId, sessionId, messageText, "", lang, null);
+      return;
+    }
+    if (GUIDING_CANCEL.test(messageText.trim())) {
+      await upsertUserPrefs({ ...prefs, pendingGuiding: undefined }).catch(() => null);
+      let m = "Okay, cancelled. Ask me anything about CPF whenever you're ready.";
+      if (lang !== "en") {
+        const t = await translateText(m, "en", lang).catch(() => null);
+        if (t) m = t.translated_text;
+      }
+      await channel.send(m).catch(() => null);
+      return;
+    }
+    await recordGuidingAnswer(channel, userId, messageText);
+    return;
+  }
+
+  // ── End-of-chat detection (customer satisfied) ───────────────────────────────
+  // A short, question-free sign-off ("thanks", "that's all", "bye") after at least
+  // one real exchange means the customer is done — end the session and ask for a
+  // rating instead of running the closing line through the query pipeline. Only the
+  // bot-only path reaches here (escalated users relayed above; the officer-close
+  // path ends their session separately). English/Singlish heuristic; non-English
+  // sign-offs fall through to the /end command and the 24h timeout.
+  if (isClosingMessage(messageText) && getHistory(userId).length > 0) {
+    log.info({ userId }, "Closing intent detected — ending session, requesting rating");
+    await endSession(userId, "satisfied", { lang });
     return;
   }
 
@@ -396,6 +675,10 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
 
   // ── Normalise text + query ───────────────────────────────────────────────────
   // Text inputs still run through the transcriber in text mode for slang normalisation.
+  // Show a "thinking" dot animation while the (often slow) LLM pipeline runs, so the
+  // citizen knows the assistant is composing a reply. The same bubble is later edited
+  // into the answer. Best-effort — never blocks or breaks the reply.
+  const thinking = await startThinking(channel);
   let queryResult;
   let triage = classifyQuery(messageText); // preliminary pass; refined after normalisation below
   try {
@@ -431,13 +714,80 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     triage = classifyQuery(queryText);
     log.info({ userId, triageCategory: triage.category, triageReason: triage.reason }, "Triage classification");
 
+    // ── Guiding-questions entry ────────────────────────────────────────────────
+    // Broad (Cat-2) questions on a topic with a curated guiding set start the
+    // interactive slot-filling flow instead of a one-shot answer. We only pay the
+    // emotion wait here (it short-circuits the LLM anyway); high distress (>70)
+    // skips guiding so the normal flow can escalate the struggling user.
+    if (triage.category === 2 && !isExplicitOfficerRequest(queryText)) {
+      const guiding = await findGuidingSetForQuery(queryText).catch(() => null);
+      if (guiding) {
+        const scored = await emotionPromise;
+        if (scored.emotion_score <= 70) {
+          const { set, knowledge } = guiding;
+          await upsertUserPrefs({
+            ...prefs,
+            pendingGuiding: {
+              topicKey: set.topicKey,
+              title: set.title,
+              questions: set.questions,
+              answers: [],
+              index: 0,
+              originalQuery: queryText,
+              knowledge,
+              synthesisHint: set.synthesisHint,
+              lang,
+            },
+          }).catch(() => null);
+          log.info({ userId, topicKey: set.topicKey, questions: set.questions.length }, "Entering guiding-questions flow");
+
+          await thinking.stop();
+          // Ask immediately — no preamble. Reclaim the "thinking" bubble by editing
+          // Q1 into it (sendGuidingQuestion falls back to a fresh send if the edit fails).
+          const firstQ = set.questions[0];
+          if (firstQ) {
+            await sendGuidingQuestion(channel, firstQ, lang, thinking.messageId);
+          } else if (thinking.messageId) {
+            await channel.deleteMessage?.(thinking.messageId).catch(() => null);
+          }
+          return;
+        }
+      }
+    }
+
+    // Tone adaptation: the current-turn sentiment (already running in parallel since
+    // the start of this handler) drives the bot's tone. It usually resolves during
+    // normalise/detect/triage, so awaiting here adds little; the same score later
+    // feeds the dashboard + escalation (single source of truth).
+    const turnEmotion = await emotionPromise;
+
+    // Trajectory layer: fold this turn together with the recent emotional trajectory
+    // of the conversation into one "effective emotion" — if the caller has been
+    // getting angrier, soothing is escalated (trajectory only ever RAISES warmth,
+    // never lowers it below the current message). Feed ONLY scored user turns:
+    // the guided-questions path stores unscored user turns, which must not be
+    // averaged in as undefined. The current turn isn't in history yet (it's
+    // appended after this call), so passing prior scores + the current one is correct.
+    const priorScores = getHistory(userId)
+      .filter((t) => t.role === "user" && typeof t.emotion_score === "number")
+      .map((t) => t.emotion_score as number)
+      .slice(-4);
+    const eff = effectiveEmotion(
+      { emotion_score: turnEmotion.emotion_score, emotion_label: turnEmotion.emotion_label },
+      priorScores,
+    );
+
     queryResult = await runQueryAgent(
       [{ role: "user", content: queryText, timestamp: new Date().toISOString() }],
-      { userId, tenantId: "cpf", vulnerabilityTier: "self-service", language: lang, triage },
+      {
+        userId, tenantId: "cpf", vulnerabilityTier: "self_service", language: lang, triage,
+        emotion: { score: eff.emotion_score, label: eff.emotion_label, sustained: eff.sustained },
+      },
     );
   } catch (err) {
     log.error(err, "Query pipeline failed");
-    await sendReply(channel, "I'm having trouble processing your request right now.", { shouldEscalate: true, offerText: "A CPF officer can assist you directly. Tap below to connect." })
+    await thinking.stop();
+    await sendReply(channel, "I'm having trouble processing your request right now.", { shouldEscalate: true, offerText: "A CPF officer can assist you directly. Tap below to connect." }, thinking.messageId)
       .catch(() => null);
     return;
   }
@@ -445,11 +795,8 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   // ── Build reply ──────────────────────────────────────────────────────────────
   let reply = queryResult.content || "I wasn't able to find an answer for that. Would you like me to connect you to a CPF officer?";
 
-  // Translate if user's language isn't English
-  if (lang !== "en" && reply) {
-    const t = await translateText(reply, "en", lang).catch(() => null);
-    if (t) reply = t.translated_text;
-  }
+  // No translation here — the query agent already generates in the user's language
+  // (native generation). Translating again would double-translate the native reply.
 
   // Intercept **generate_tts**(...) emitted by the LLM — strip it from display
   // text and capture what the LLM wanted to speak aloud.
@@ -462,14 +809,16 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   // Format: strip markdown, bold CPF terms with HTML tags
   reply = formatReply(reply, "html");
 
-  // Append user + bot turns to rolling history (used as full chat_history at escalation time)
-  const hist = conversationHistoryStore.get(userId) ?? [];
-  hist.push({ role: "user", content: messageText, ts: new Date().toISOString() });
-  hist.push({ role: "agent", content: plainBotReply, ts: new Date().toISOString() });
-  conversationHistoryStore.set(userId, hist.slice(-30)); // keep last 15 exchanges
-
   // Await the emotion result (already scored and pushed to ring buffer by .then() above)
   const scored = await emotionPromise;
+
+  // Append user + bot turns to rolling history (used as full chat_history at escalation time).
+  // The user turn carries this message's sentiment score for the officer dashboard timeline.
+  appendHistory(
+    userId,
+    { role: "user", content: messageText, ts: new Date().toISOString(), emotion_score: scored.emotion_score, emotion_label: scored.emotion_label },
+    { role: "agent", content: plainBotReply, ts: new Date().toISOString() },
+  );
 
   // ── Escalation analysis ──────────────────────────────────────────────────────
   // Run the 5-layer escalation analyzer, with triage as fallback.
@@ -490,7 +839,10 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     log.info({ userId, reason: escalation.reason }, "Escalation offered to user");
   }
 
-  await sendReply(channel, reply, escalation)
+  // Stop the thinking animation (awaits any in-flight frame so the answer edit is
+  // the final write) and edit that bubble into the final reply.
+  await thinking.stop();
+  await sendReply(channel, reply, escalation, thinking.messageId)
     .catch((err: unknown) => log.error(err, "Failed to send reply"));
 
   // ── TTS: generate and send audio reply ──────────────────────────────────────
@@ -529,15 +881,46 @@ async function relayToOfficer(
     const t = await translateText(messageText, userLang, "en").catch(() => null);
     if (t) englishText = t.translated_text;
   }
+
+  // Score the sentiment of this relayed message so the officer sees the live emotional
+  // trajectory while handling the case — not just the score captured at escalation time.
+  const emo = await detectEmotion(messageText).catch(() => ({ label: "neutral" as const, score: 0.1 }));
+  const scored = scoreEmotion(emo, null);
+
   const ts = new Date().toISOString();
   broadcast("user_message", {
     queueId, userId,
     message: englishText,
     original_message: messageText,
     original_lang: userLang,
+    emotion_score: scored.emotion_score,
+    emotion_label: scored.emotion_label,
     ts,
   });
-  appendToQueueHistory(queueId, { role: "user", content: englishText, ts }).catch(() => null);
+
+  // Push the live emotion event to the dashboard ring buffer and patch the queue entry's
+  // top-level emotion so the card reflects how the citizen feels right now.
+  const emotionPayload = {
+    userId,
+    channel: userId.startsWith("tg:") ? "tg" : "wa",
+    emotion_label: scored.emotion_label,
+    emotion_score: scored.emotion_score,
+    message_preview: messageText.slice(0, 80),
+    ts,
+  };
+  broadcast("emotion_update", emotionPayload);
+  pushEmotionEvent(emotionPayload);
+  updateQueueEmotion(userId, scored, messageText.slice(0, 80))
+    .then((qid) => { if (qid) broadcast("queue_updated", { queueId: qid, userId }); })
+    .catch(() => null);
+
+  appendToQueueHistory(queueId, {
+    role: "user",
+    content: englishText,
+    ts,
+    emotion_score: scored.emotion_score,
+    emotion_label: scored.emotion_label,
+  }).catch(() => null);
 }
 
 export async function escalateUser(channel: InboundChannel, userId: string): Promise<void> {
@@ -566,8 +949,8 @@ export async function escalateUser(channel: InboundChannel, userId: string): Pro
     : "User requested CPF officer via button";
 
   await upsertUserPrefs({ ...(prefs ?? { userId, preferred_lang: "en", voice_enabled: false, speech_rate: 1.0, accessibility_mode: "standard" }), pendingOfficerOffer: false }).catch(() => null);
-  const chatHistory = conversationHistoryStore.get(userId) ?? [];
-  conversationHistoryStore.delete(userId);
+  const chatHistory = getHistory(userId);
+  clearHistory(userId);
   await doEscalate(channel, userId, sessionId, summary, "", lang, emotion, chatHistory);
 }
 
@@ -579,7 +962,7 @@ async function doEscalate(
   botSummary: string,
   preferredLang: string,
   emotion: ScoredEmotion | null,
-  chatHistory?: Array<{ role: string; content: string; ts: string }>,
+  chatHistory?: Array<{ role: string; content: string; ts: string; emotion_score?: number; emotion_label?: string }>,
 ): Promise<void> {
   const entry = await postToQueue({
     sessionId, userId,

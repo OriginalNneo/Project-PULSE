@@ -4,9 +4,9 @@ import { createServiceLogger } from "../../shared/logger.js";
 const log = createServiceLogger("accessibility");
 
 const TIER_CONFIG: Record<VulnerabilityTier, { maxWords: number; speechRate: number }> = {
-  "self-service": { maxWords: 50, speechRate: 1.0  },
+  "self_service": { maxWords: 50, speechRate: 1.0  },
   "guided":       { maxWords: 30, speechRate: 0.85 },
-  "high-touch":   { maxWords: 20, speechRate: 0.7  },
+  "high_touch":   { maxWords: 20, speechRate: 0.7  },
 };
 
 export function simplifyText(content: string, tier: VulnerabilityTier): string {

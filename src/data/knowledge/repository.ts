@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { knowledgeSeedPath } from "../paths.js";
+import { knowledgeSeedPath, guidingQuestionsSeedPath } from "../paths.js";
 import { getDocumentStore } from "../docstore/index.js";
 import {
   COLLECTIONS,
@@ -7,6 +7,8 @@ import {
   type CpfKnowledgeFile,
   type CpfSection,
   type CpfTerm,
+  type CpfGuidingQuestionSet,
+  type CpfGuidingQuestionsFile,
 } from "../docstore/types.js";
 
 export type { CpfKnowledgeDoc, CpfSection, CpfTerm } from "../docstore/types.js";
@@ -31,6 +33,25 @@ export async function seedKnowledge(file: CpfKnowledgeFile): Promise<{ sections:
   const documents = await store.replaceAll(COLLECTIONS.knowledge, file.documents);
   const terminology = await store.replaceAll(COLLECTIONS.terminology, file.terminology);
   return { sections, documents, terminology, backend: store.backend };
+}
+
+/**
+ * Load the curated guiding-question sets. Tolerant of a missing file so
+ * seeding never breaks when the feature's data hasn't been authored yet.
+ */
+export function loadGuidingQuestionsFile(): CpfGuidingQuestionsFile {
+  try {
+    const raw = fs.readFileSync(guidingQuestionsSeedPath(), "utf8");
+    return JSON.parse(raw) as CpfGuidingQuestionsFile;
+  } catch {
+    return { version: "0", topics: [] };
+  }
+}
+
+export async function seedGuidingQuestions(file: CpfGuidingQuestionsFile): Promise<{ topics: number; backend: string }> {
+  const store = await getDocumentStore();
+  const topics = await store.replaceAll(COLLECTIONS.guidingQuestions, file.topics);
+  return { topics, backend: store.backend };
 }
 
 // ---------------------------------------------------------------------------

@@ -20,10 +20,18 @@ export function scoreEmotion(text: EmotionResult, audio?: AudioEmotionResult | n
   return { emotion_score: Math.round(score), emotion_label: labelFor(score) };
 }
 
-function labelFor(score: number): string {
-  if (score > 80) return "rage";
-  if (score > 65) return "angry";
-  if (score > 50) return "frustrated";
-  if (score > 35) return "sad";
+// Distress-score → label thresholds (single source of truth, reused by the
+// trajectory layer in emotionTrajectory.ts). A score strictly ABOVE a band's
+// number takes that band's label.
+export const EMOTION_THRESHOLDS = { rage: 80, angry: 65, frustrated: 50, sad: 35 } as const;
+
+/** "above the angry band" — the line at which we treat a turn as a hot turn. */
+export const ANGRY_THRESHOLD = EMOTION_THRESHOLDS.angry;
+
+export function labelFor(score: number): string {
+  if (score > EMOTION_THRESHOLDS.rage) return "rage";
+  if (score > EMOTION_THRESHOLDS.angry) return "angry";
+  if (score > EMOTION_THRESHOLDS.frustrated) return "frustrated";
+  if (score > EMOTION_THRESHOLDS.sad) return "sad";
   return "neutral";
 }

@@ -1,5 +1,5 @@
 import { getSessionsByUser, getConversationLog } from "../../db/proxy-client.js";
-import { callHermes } from "../../shared/llm/client.js";
+import { callHermes } from "../../services/ai/llmClient.js";
 import { createServiceLogger } from "../../shared/logger.js";
 
 const log = createServiceLogger("summariser");

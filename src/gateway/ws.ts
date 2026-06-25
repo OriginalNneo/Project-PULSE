@@ -12,7 +12,8 @@ export type WsEventName =
   | "officer_status_change"
   | "user_message"
   | "officer_message"
-  | "emotion_update";   // fired per inbound message with live emotion score
+  | "emotion_update"    // fired per inbound message with live emotion score
+  | "rating_received";  // fired when a citizen submits a 1–5 CSAT rating
 
 export interface WsMessage {
   event: WsEventName;

@@ -199,7 +199,7 @@ export function resolveMemberProfile(session: ChatSession): MemberProfile | null
 
 function pickDeterministic(items: Array<{ id: string }>, session: ChatSession): MemberProfile | null {
   const seed = session.channelUserId ?? session.sessionId;
-  const idx = Array.from(seed).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % items.length;
+  const idx = Array.from(seed as string).reduce((acc, ch: string) => acc + ch.charCodeAt(0), 0) % items.length;
   const chosen = getCustomer(items[idx]!.id);
   return chosen ? toProfile(chosen, "demo") : null;
 }

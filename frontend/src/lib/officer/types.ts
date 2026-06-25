@@ -54,10 +54,15 @@ export interface ChatTurn {
   role: "user" | "assistant" | "officer" | "system";
   content: string;
   at: string;
+  /** Per-message sentiment (0–100) for citizen turns; absent for bot/officer turns. */
+  emotion_score?: number;
+  emotion_label?: string;
 }
 
 export interface ChatSession {
   sessionId: string;
+  /** Raw channel id, e.g. "tg:123456789" — the live Telegram chat id. */
+  channelUserId?: string;
   channel: string;
   displayName: string;
   maskedNric: string;

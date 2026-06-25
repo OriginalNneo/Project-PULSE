@@ -57,21 +57,62 @@ async function apiCall<T>(method: string, params: Record<string, unknown>): Prom
   return body.result as T;
 }
 
+/** Send a message and return its message_id (needed to edit it later, e.g. the
+ *  "thinking" animation bubble). Returns null if the bot token isn't configured. */
+export async function sendTelegramMessageReturningId(
+  chatId: number | string,
+  text: string,
+  replyMarkup?: { inline_keyboard: InlineKeyboard },
+  html = false,
+): Promise<number | null> {
+  if (!TOKEN) {
+    log.warn("TELEGRAM_BOT_TOKEN not configured — message not sent");
+    return null;
+  }
+  const params: Record<string, unknown> = { chat_id: chatId, text };
+  if (html) params.parse_mode = "HTML";
+  if (replyMarkup) params.reply_markup = replyMarkup;
+  const result = await apiCall<{ message_id: number }>("sendMessage", params);
+  log.info({ chatId, hasButtons: Boolean(replyMarkup), html }, "Telegram message sent");
+  return result?.message_id ?? null;
+}
+
 export async function sendTelegramMessage(
   chatId: number | string,
   text: string,
   replyMarkup?: { inline_keyboard: InlineKeyboard },
   html = false,
 ): Promise<void> {
-  if (!TOKEN) {
-    log.warn("TELEGRAM_BOT_TOKEN not configured — message not sent");
-    return;
-  }
-  const params: Record<string, unknown> = { chat_id: chatId, text };
+  await sendTelegramMessageReturningId(chatId, text, replyMarkup, html);
+}
+
+/** Edit an existing message in place (used for the thinking animation → final
+ *  answer, so no extra bubbles appear). Returns true on success. */
+export async function editTelegramMessage(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  replyMarkup?: { inline_keyboard: InlineKeyboard },
+  html = false,
+): Promise<boolean> {
+  if (!TOKEN) return false;
+  const params: Record<string, unknown> = { chat_id: chatId, message_id: messageId, text };
   if (html) params.parse_mode = "HTML";
   if (replyMarkup) params.reply_markup = replyMarkup;
-  await apiCall("sendMessage", params);
-  log.info({ chatId, hasButtons: Boolean(replyMarkup), html }, "Telegram message sent");
+  await apiCall("editMessageText", params);
+  return true;
+}
+
+/** Delete a message (used to clear a stale thinking bubble if the final edit fails). */
+export async function deleteTelegramMessage(chatId: number | string, messageId: number): Promise<void> {
+  if (!TOKEN) return;
+  await apiCall("deleteMessage", { chat_id: chatId, message_id: messageId });
+}
+
+/** Show the native "typing…" indicator (rate-safe; auto-expires after ~5s). */
+export async function sendChatAction(chatId: number | string, action = "typing"): Promise<void> {
+  if (!TOKEN) return;
+  await apiCall("sendChatAction", { chat_id: chatId, action });
 }
 
 export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
@@ -153,6 +194,7 @@ export async function setMyCommands(): Promise<void> {
       { command: "help",    description: "Full command reference" },
       { command: "voice",   description: "Toggle voice replies (voice on / voice off)" },
       { command: "dialect", description: "Set dialect voice (cantonese, hokkien, teochew…)" },
+      { command: "end",     description: "End this chat and rate your experience" },
     ],
   });
   log.info("Telegram command menu registered");

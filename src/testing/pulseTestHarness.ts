@@ -13,25 +13,11 @@ import type {
   Urgency,
   VulnerabilityTier,
 } from "../shared/types/language.js";
+import { LanguageSchema, DialectSchema, VulnerabilityTierSchema } from "../shared/types/schemas.js";
 
-export const languageContract = z.enum(["en", "zh", "ms", "ta"]);
-export const dialectContract = z.enum([
-  "zh-hok",
-  "zh-can",
-  "zh-teo",
-  "zh-hak",
-  "zh-hai",
-  "ms-bms",
-  "ms-joh",
-  "ms-boy",
-  "ms-jav",
-  "ta-sin",
-  "ta-spo",
-  "ml",
-  "pa",
-  "hi",
-]);
-export const vulnerabilityTierContract = z.enum(["self-service", "guided", "high-touch"]);
+export const languageContract = LanguageSchema;
+export const dialectContract = DialectSchema;
+export const vulnerabilityTierContract = VulnerabilityTierSchema;
 export const deliveryChannelContract = z.enum(["physical", "sms", "voice", "email", "in-app"]);
 export const urgencyContract = z.enum(["normal", "high", "critical"]);
 export const correspondenceCategoryContract = z.enum([
@@ -130,18 +116,21 @@ const languageLocale: Record<Language, string> = {
   zh: "zh-SG",
   ms: "ms-SG",
   ta: "ta-SG",
+  hi: "hi-SG",
+  ml: "ml-SG",
+  pa: "pa-SG",
 };
 
 const tierProfile: Record<VulnerabilityTier, Pick<UiProfileResolution, "assistedMode" | "voiceFirst" | "fontScale">> = {
-  "self-service": { assistedMode: false, voiceFirst: false, fontScale: 1 },
-  guided: { assistedMode: true, voiceFirst: false, fontScale: 1.15 },
-  "high-touch": { assistedMode: true, voiceFirst: true, fontScale: 1.3 },
+  "self_service": { assistedMode: false, voiceFirst: false, fontScale: 1 },
+  guided:         { assistedMode: true, voiceFirst: false, fontScale: 1.15 },
+  "high_touch":   { assistedMode: true, voiceFirst: true, fontScale: 1.3 },
 };
 
 export function resolveUiProfile(input: UiProfileInput): UiProfileResolution {
   const requestedChannels = input.requestedChannels ?? ["in-app"];
   const primaryChannel =
-    input.vulnerabilityTier === "high-touch" && requestedChannels.includes("voice")
+    input.vulnerabilityTier === "high_touch" && requestedChannels.includes("voice")
       ? "voice"
       : requestedChannels[0] ?? "in-app";
 
@@ -263,7 +252,7 @@ export function projectCsoAlerts(
     .map((profile) => {
       const friction = frictionByUser.get(profile.userId);
       const reasons = [
-        profile.tier === "high-touch" ? "high-touch profile" : undefined,
+        profile.tier === "high_touch" ? "high-touch profile" : undefined,
         friction && friction.escalation !== "none" ? `${friction.escalation} friction` : undefined,
         criticalCorrespondenceUsers.has(profile.userId) ? "critical correspondence" : undefined,
       ].filter((reason): reason is string => Boolean(reason));
@@ -271,7 +260,7 @@ export function projectCsoAlerts(
       const severity: CsoAlertSeverity =
         reasons.includes("critical correspondence") || friction?.escalation === "urgent"
           ? "critical"
-          : profile.tier === "high-touch" || friction?.escalation === "assist"
+          : profile.tier === "high_touch" || friction?.escalation === "assist"
             ? "warning"
             : "info";
 
@@ -312,7 +301,7 @@ export function makeVulnerabilityProfile(
 ): VulnerabilityProfile {
   return {
     userId: "user-1",
-    tier: "self-service",
+    tier: "self_service",
     signals: [],
     lastAssessed: "2026-05-30T00:00:00.000Z",
     ...overrides,

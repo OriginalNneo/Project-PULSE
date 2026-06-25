@@ -82,6 +82,27 @@ const CAT2_PATTERNS: readonly RegExp[] = [
   // "Is my X enough" — general threshold answerable, their specific amount needs account
   /\bis my (medisave|oa|sa|ra|cpf|savings) (enough|sufficient|adequate)\b/i,
   /\bdo i have enough (in my|cpf|medisave|oa|sa)\b/i,
+
+  // ── Broad topic questions that benefit from guiding questions ──────────────
+  // The exact-phrase patterns above are brittle on word adjacency (e.g. "how
+  // much CPF LIFE payout will I get?" slips past them). These looser patterns
+  // tolerate words between the anchor and the topic noun so natural phrasings
+  // for the guided topics (retirement payouts, top-ups, housing) land in Cat-2.
+  // Personal "my payout/balance" phrasings are still caught FIRST by Cat-3,
+  // and queries with user-provided numbers are excluded by the guard below.
+
+  // Retirement payouts — amount depends on the user's own RA balance.
+  /\bhow much\b[\s\w]{0,25}\b(payout|pension|cpf life)\b/i,
+  /\bhow much\b[\s\w]{0,25}\b(retirement|monthly) income\b/i,
+  /\bwhat (will|would) (my|the)\b[\s\w]{0,20}\bpayout\b/i,
+
+  // Top-ups — advisory "is it worth / should I top up".
+  /\b(is it worth|worth it to|better to)\b[\s\w]{0,15}\btop.?up\b/i,
+  /\btop.?up\b[\s\w]{0,15}\b(worth it|or not)\b/i,
+
+  // Housing — using CPF for a home (depends on property type & eligibility).
+  /\bcan i use (my )?cpf\b[\s\w]{0,25}\b(buy|home|flat|house|property|hdb|housing|downpayment|down payment)\b/i,
+  /\bhow much\b[\s\w]{0,25}\b(housing|hdb|flat|property|home loan|downpayment|down payment)\b/i,
 ];
 
 // ── Public — signals this is clearly Category 1 even if ambiguous otherwise ──
