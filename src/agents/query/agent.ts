@@ -137,7 +137,7 @@ export async function runQueryAgent(
   // mid-reasoning. Fall back to the raw retrieved knowledge so the user still gets the
   // facts — but remember it failed so we DON'T cache a degraded answer and the officer is
   // offered (B8: the raw retrieval scaffold used to be served and cached as a real answer).
-  const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion), hermesContext).catch(() => "");
+  const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion), hermesContext, [], 1024, true, { thinking: { type: "disabled" } }).catch(() => "");
   const llmContent = rawContent.trim();
   const llmFailed = llmContent.length === 0;
   const content = llmContent || retrievedForLLM;

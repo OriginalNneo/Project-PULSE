@@ -890,19 +890,11 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       }
     }
 
-    // Auto-detect the language of the normalised message.
-    // Only run when the text is long enough for reliable detection (≥8 chars).
-    // If the detected language differs from the stored pref, update lang + prefs
-    // so both the translation step and TTS respond in the user's actual language.
-    if (queryText.length >= 8) {
-      const detected = await detectLanguage(queryText).catch(() => null);
-      if (detected && SUPPORTED_LANGS.has(detected as Lang) && detected !== lang) {
-        lang = detected as Lang;
-        prefs = { ...prefs, preferred_lang: lang };
-        await upsertUserPrefs(prefs).catch(() => null);
-        log.info({ userId, detectedLang: lang }, "Language auto-detected — switching response language");
-      }
-    }
+    // Language detection runs in parallel with emotionPromise (both are async API calls).
+    // Previously detectLanguage was awaited sequentially, adding ~1–2s before the LLM.
+    const detectLangPromise: Promise<string | null> = queryText.length >= 8
+      ? detectLanguage(queryText).catch(() => null)
+      : Promise.resolve(null);
 
     // Re-classify on normalised text (slang may have changed keyword signals).
     triage = classifyQuery(queryText);
@@ -910,13 +902,19 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
 
     // ── Guiding-questions entry ────────────────────────────────────────────────
     // Broad (Cat-2) questions on a topic with a curated guiding set start the
-    // interactive slot-filling flow instead of a one-shot answer. We only pay the
-    // emotion wait here (it short-circuits the LLM anyway); high distress (>70)
-    // skips guiding so the normal flow can escalate the struggling user.
+    // interactive slot-filling flow instead of a one-shot answer. Resolve lang +
+    // emotion together (both in-flight); high distress (>70) skips guiding so the
+    // normal flow can escalate the struggling user.
     if (triage.category === 2 && !isExplicitOfficerRequest(queryText)) {
       const guiding = await findGuidingSetForQuery(queryText).catch(() => null);
       if (guiding) {
-        const scored = await emotionPromise;
+        const [detectedLang, scored] = await Promise.all([detectLangPromise, emotionPromise]);
+        if (detectedLang && SUPPORTED_LANGS.has(detectedLang as Lang) && detectedLang !== lang) {
+          lang = detectedLang as Lang;
+          prefs = { ...prefs, preferred_lang: lang };
+          await upsertUserPrefs(prefs).catch(() => null);
+          log.info({ userId, detectedLang: lang }, "Language auto-detected — switching response language");
+        }
         if (scored.emotion_score <= 70) {
           const { set, knowledge } = guiding;
           await upsertUserPrefs({
@@ -936,8 +934,6 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
           log.info({ userId, topicKey: set.topicKey, questions: set.questions.length }, "Entering guiding-questions flow");
 
           await thinking.stop();
-          // Ask immediately — no preamble. Reclaim the "thinking" bubble by editing
-          // Q1 into it (sendGuidingQuestion falls back to a fresh send if the edit fails).
           const firstQ = set.questions[0];
           if (firstQ) {
             await sendGuidingQuestion(channel, firstQ, lang, thinking.messageId);
@@ -949,11 +945,15 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       }
     }
 
-    // Tone adaptation: the current-turn sentiment (already running in parallel since
-    // the start of this handler) drives the bot's tone. It usually resolves during
-    // normalise/detect/triage, so awaiting here adds little; the same score later
-    // feeds the dashboard + escalation (single source of truth).
-    const turnEmotion = await emotionPromise;
+    // Resolve language + emotion together — both have been running since early in
+    // the handler; awaiting here adds near-zero latency for either.
+    const [detected, turnEmotion] = await Promise.all([detectLangPromise, emotionPromise]);
+    if (detected && SUPPORTED_LANGS.has(detected as Lang) && detected !== lang) {
+      lang = detected as Lang;
+      prefs = { ...prefs, preferred_lang: lang };
+      await upsertUserPrefs(prefs).catch(() => null);
+      log.info({ userId, detectedLang: lang }, "Language auto-detected — switching response language");
+    }
 
     // Trajectory layer: fold this turn together with the recent emotional trajectory
     // of the conversation into one "effective emotion" — if the caller has been

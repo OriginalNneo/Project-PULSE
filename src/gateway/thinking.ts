@@ -7,12 +7,12 @@ const log = createServiceLogger("thinking");
  * "Thinking" indicator for the messaging bot, so the citizen knows the assistant
  * is working on a reply during the (often 30–90s) LLM/query pipeline wait.
  *
- * A 💭 dot hops left → right across four slots, editing ONE message bubble in
+ * A 💭 dot hops left → right across three slots, editing ONE message bubble in
  * place every ~2s. When the answer is ready the caller edits that SAME bubble
  * into the final reply — no extra bubbles. On channels that can't edit (e.g.
  * WhatsApp) it degrades to the native "typing…" action only.
  *
- *   💭 ●　·　·　·   →   💭 ·　●　·　·   →   💭 ·　·　●　·   →   💭 ·　·　·　●   →  (loops)
+ *   💭 ●　·　·   →   💭 ·　●　·   →   💭 ·　·　●   →  (loops)
  *
  * Design notes (this runs on the live hot path):
  * - Interval is ~2s — Telegram allows ~1 edit/sec per chat; 600ms would 429 and
@@ -24,10 +24,9 @@ const log = createServiceLogger("thinking");
  *   never edit a message forever.
  */
 const FRAMES = [
-  "💭 ●　·　·　·",
-  "💭 ·　●　·　·",
-  "💭 ·　·　●　·",
-  "💭 ·　·　·　●",
+  "💭 ●　·　·",
+  "💭 ·　●　·",
+  "💭 ·　·　●",
 ];
 const FRAME_INTERVAL_MS = 2000;
 const TYPING_REFRESH_MS = 4000;

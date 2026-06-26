@@ -487,12 +487,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           <div style={pill(!isIncoming)} onClick={() => setTab('chats')}>CURRENT CHATS</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, flex: 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#fff', fontWeight: 300, fontSize: 18 }}>
-            <span style={{ position: 'relative', display: 'inline-flex', width: 14, height: 14 }}>
-              <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#6bff9a', animation: 'pulsering 1.9s ease-out infinite' }} />
-              <span style={{ position: 'absolute', inset: 3, borderRadius: '50%', background: '#36cf6a' }} />
-            </span>Live
-          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 16px 4px 5px', borderRadius: 22, background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.5)' }}>
             <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#4749be', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>PL</div>
             <span style={{ color: '#fff', fontWeight: 300, fontSize: 17 }}>Patricia Lam</span>
