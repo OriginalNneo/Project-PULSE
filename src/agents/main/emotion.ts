@@ -13,8 +13,15 @@ export interface ScoredEmotion {
  *   audio_boost = (1 - valence) * arousal * 0.3   (0 when no audio)
  *   final_score = min((text_base + audio_boost) * 100, 100)
  */
+// The text classifier (j-hartmann/emotion-english-distilroberta-base) emits one of
+// anger | disgust | fear | joy | neutral | sadness | surprise, and `score` is its
+// CONFIDENCE in that label — NOT a distress magnitude. Only the negative emotions
+// count as distress; a confident "joy"/"surprise" must read as 0, not a high score.
+// (Without this gate, "thank you!!" → joy 0.95 → 95 → "rage" → false escalation.)
+const DISTRESS_LABELS = new Set(["anger", "sadness", "fear", "disgust"]);
+
 export function scoreEmotion(text: EmotionResult, audio?: AudioEmotionResult | null): ScoredEmotion {
-  const textBase = text.score;
+  const textBase = DISTRESS_LABELS.has(text.label) ? text.score : 0;
   const audioBoost = audio ? (1 - audio.valence) * audio.arousal * 0.3 : 0;
   const score = Math.min((textBase + audioBoost) * 100, 100);
   return { emotion_score: Math.round(score), emotion_label: labelFor(score) };

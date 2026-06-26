@@ -17,8 +17,8 @@ Config is overridable via env: `POST_BACKEND` (`http://127.0.0.1:3000`), `POST_F
 | **0 — Stale-session guard** | Kill non-pm2 dev strays (`tsx watch …gateway`, `concurrently …dev:backend`, `next dev`) that would hold `:3000`/`:3001`. pm2 uses `npx tsx …index.ts` (no watch) + `next start`, so those are never touched. Captures error-log size for Phase 2. | — |
 | **1 — Start & health** | `pm2 restart pulse-backend`; poll `GET /health/live` until `200` (≤30s). | FAIL if no 200 |
 | **2 — Log integrity** | Scan **only the bytes appended since the restart** for `Error`/`ERR_`/`EADDRINUSE`/`Cannot find module`. Stale historical errors are ignored (the trap from 2026-06-18). | FAIL on fresh errors |
-| **3 — Frontend** | `GET :3001/officer` == 200; `GET <public>/officer` == 200. | FAIL local; WARN public |
-| **4 — Backend ↔ Frontend** | Through the Next proxy: `GET :3001/api/v1/officer/dashboard` returns valid JSON (`data.openChats` array). | FAIL |
+| **3 — Frontend** | `GET :3001/dashboard` == 200; `GET <public>/dashboard` == 200. (The officer console is the `/dashboard` page — there is no `/officer` route.) | FAIL local; WARN public |
+| **4 — Backend ↔ Frontend** | Through the Next proxy: `GET :3001/api/v1/adaptive-local/health` returns valid JSON (`status: "ok"`). (Was `/api/v1/officer/dashboard` until the dead officer surface was deleted.) | FAIL |
 | **5 — Dashboard live channel** | WebSocket `ws://127.0.0.1:3000/dashboard/ws` opens. | FAIL |
 | **6 — Telegram** | `getMe` (token valid). `getWebhookInfo` **must list `callback_query`** — if missing, **auto re-register** the webhook with `["message","edited_message","callback_query"]`. If `TELEGRAM_OFFICER_CHAT_ID` set, send a self-test message and confirm `message_id`. | FAIL getMe / webhook repair; WARN send |
 | **7 — Verdict** | PASS/WARN/FAIL tally; exit code. | — |

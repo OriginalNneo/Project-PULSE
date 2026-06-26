@@ -67,16 +67,21 @@ fi
 
 # ── Phase 3 — Frontend ───────────────────────────────────────────────────────
 hdr "Phase 3 — Frontend"
-c=$(http "$FRONTEND/officer"); [ "$c" = "200" ] && ok "frontend $FRONTEND/officer 200" || bad "frontend /officer ($c)"
-c=$(http "$PUBLIC/officer" 15); [ "$c" = "200" ] && ok "public $PUBLIC/officer 200" || warn "public /officer ($c) — DNS/Caddy/frontend down?"
+# The officer console lives at /dashboard (the /officer route was never part of this
+# frontend; it uses /dashboard + WS). Probe the real page.
+c=$(http "$FRONTEND/dashboard"); [ "$c" = "200" ] && ok "frontend $FRONTEND/dashboard 200" || bad "frontend /dashboard ($c)"
+c=$(http "$PUBLIC/dashboard" 15); [ "$c" = "200" ] && ok "public $PUBLIC/dashboard 200" || warn "public /dashboard ($c) — DNS/Caddy/frontend down?"
 
 # ── Phase 4 — Backend ↔ Frontend (Next proxy) ────────────────────────────────
 hdr "Phase 4 — Backend ↔ Frontend connectivity"
-if curl -s -m 10 "$FRONTEND/api/v1/officer/dashboard" 2>/dev/null \
-   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.data&&Array.isArray(j.data.openChats)?0:1)}catch{process.exit(1)}})"; then
-  ok "frontend proxy → backend dashboard API (valid JSON)"
+# Verify the Next proxy (/api/:path* → backend) forwards to a live backend endpoint and
+# returns valid JSON. Uses adaptive-local/health (live, unauthenticated) — the old
+# /api/v1/officer/dashboard probe was removed when the dead officer surface was deleted.
+if curl -s -m 10 "$FRONTEND/api/v1/adaptive-local/health" 2>/dev/null \
+   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.exit(j.status==='ok'?0:1)}catch{process.exit(1)}})"; then
+  ok "frontend proxy → backend API (valid JSON)"
 else
-  bad "frontend cannot reach backend dashboard API"
+  bad "frontend cannot reach backend API through the Next proxy"
 fi
 
 # ── Phase 5 — Dashboard live channel (WebSocket) ─────────────────────────────

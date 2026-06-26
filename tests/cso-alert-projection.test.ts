@@ -33,7 +33,7 @@ describe("CSO alert projection behavior", () => {
     ]);
 
     const alerts = projectCsoAlerts(
-      [makeVulnerabilityProfile({ userId: "user-assisted", tier: "high-touch" })],
+      [makeVulnerabilityProfile({ userId: "user-assisted", tier: "high_touch" })],
       friction,
       [],
     );

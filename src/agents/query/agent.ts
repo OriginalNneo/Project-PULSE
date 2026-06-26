@@ -133,10 +133,14 @@ export async function runQueryAgent(
     language !== "en" ? `Respond in: ${language}` : null,
   ].filter(Boolean).join("\n\n");
 
-  // GLM-5-turbo is a thinking model; content is empty if it ran out of tokens mid-reasoning.
-  // Fall back to the raw retrieved content so the user always gets something useful.
+  // GLM is a thinking model; content is empty if the LLM is down or ran out of tokens
+  // mid-reasoning. Fall back to the raw retrieved knowledge so the user still gets the
+  // facts — but remember it failed so we DON'T cache a degraded answer and the officer is
+  // offered (B8: the raw retrieval scaffold used to be served and cached as a real answer).
   const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion), hermesContext).catch(() => "");
-  const content = rawContent.trim() || retrievedForLLM;
+  const llmContent = rawContent.trim();
+  const llmFailed = llmContent.length === 0;
+  const content = llmContent || retrievedForLLM;
 
   // Only flag hallucinations on fabricated numbers (>3 ungrounded). Word-overlap
   // is not used — GLM naturally paraphrases and that is not a hallucination.
@@ -148,7 +152,7 @@ export async function runQueryAgent(
   // Never auto-escalate from the query agent. inbound.ts offers the officer
   // as an option when confidence is low or this is a personal data request;
   // the user decides by replying *Officer*.
-  const requiresHumanReview = state.blocked || state.confidence < 0.3 || state.isPersonalDataRequest;
+  const requiresHumanReview = state.blocked || state.confidence < 0.3 || state.isPersonalDataRequest || llmFailed;
 
   if (!requiresHumanReview) {
     await writeQueryCache({ hash: cacheHash, response: content, intent, lang: language }).catch(() => null);

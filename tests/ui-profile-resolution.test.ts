@@ -7,7 +7,7 @@ describe("UI profile resolution expectations", () => {
     expect(
       resolveUiProfile({
         language: "en",
-        vulnerabilityTier: "self-service",
+        vulnerabilityTier: "self_service",
       }),
     ).toEqual({
       locale: "en-SG",
@@ -43,7 +43,7 @@ describe("UI profile resolution expectations", () => {
       resolveUiProfile({
         language: "ta",
         dialect: "ta-sin",
-        vulnerabilityTier: "high-touch",
+        vulnerabilityTier: "high_touch",
         requestedChannels: ["sms", "voice", "in-app"],
       }),
     ).toMatchObject({

@@ -31,6 +31,7 @@ export function getLatestEmotionForUser(userId: string): EmotionEvent | null {
 import { getQueue, getQueueEntry, getQueueStats, resolveQueueEntry, appendToQueueHistory } from "../db/proxy-client.js";
 import { setOfficerStatus, listOfficers, type OfficerStatus } from "../dashboard/officer.js";
 import { notifyCaseResolved } from "../dashboard/notify.js";
+import { endSession } from "../services/session/manager.js";
 import { broadcast } from "./ws.js";
 import { sendWhatsAppMessage } from "../adapters/twilio/client.js";
 import { translateText, detectLanguage } from "../python-bridge/client.js";
@@ -160,20 +161,15 @@ router.patch("/resolve/:queueId", async (req: Request, res: Response) => {
 
   notifyCaseResolved(req.params.queueId!);
 
-  // Tell the citizen their chat is closed (Telegram or WhatsApp). After resolve the entry
-  // is no longer waiting/assigned, so their next message starts a fresh AI conversation.
-  let closeMsg = "✅ This chat has been closed by the officer. Type anything to start a new conversation.";
-  if (entry.preferred_lang !== "en") {
-    const t = await translateText(closeMsg, "en", entry.preferred_lang).catch(() => null);
-    if (t) closeMsg = t.translated_text;
-  }
-  if (entry.userId.startsWith("tg:")) {
-    const chatId = parseInt(entry.userId.slice(3), 10);
-    const { sendTelegramMessage } = await import("../adapters/telegram/client.js");
-    await sendTelegramMessage(chatId, closeMsg).catch(() => null);
-  } else if (entry.userId.startsWith("wa:")) {
-    await sendWhatsAppMessage(entry.userId.slice(3), closeMsg).catch(() => null);
-  }
+  // End the citizen's session with an officer-resolution CSAT prompt (B4). endSession
+  // sends the localized "resolved by an officer — how would you rate?" message with star
+  // buttons (TG) / 1-5 reply (WA), ties the rating to this queue entry, and resets the
+  // chat so the next message starts fresh. Replaces the old plain close message, which
+  // never asked for a rating — so officer-side CSAT was never actually collected.
+  await endSession(entry.userId, "officer", {
+    lang: entry.preferred_lang,
+    queueId: req.params.queueId,
+  }).catch((e: unknown) => log.warn({ e, queueId: req.params.queueId }, "officer-resolve endSession failed"));
 
   res.json({ ok: true });
 });

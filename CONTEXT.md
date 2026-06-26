@@ -17,6 +17,17 @@
 
 ---
 
+## Recent changes (2026-06-26 — self-test / refactor pass 1)
+
+Full scorecard + hierarchical test plan: [`tests/SELF_TEST_REPORT.md`](./tests/SELF_TEST_REPORT.md). Added a runnable unit suite (`npm test` → **79/79 green**, 0 type errors).
+
+- **Bugs fixed:** B1 emotion-label gating (a happy message no longer scores as "rage" → false escalation), B2 typed escalation now carries full history/emotion via `escalateUser`, B3 whole-word `"yes"` match, B4 officer "Resolve" now sends a CSAT prompt, B5 escalation offer text preserved on no-button channels, B6 translation defaults to GLM (skips the dead SeamlessM4T HF call), B7+B8 (see report).
+- **Dead code removed:** `services/proxy/` db-proxy microservice (mounted stub `proxy/routes.ts` kept), the unused `/api/v1/officer/*` REST surface (unmounted), `config/integration.ts`, and the unused `pg`/`ioredis`/`kafkajs` deps. _Note:_ the Tech-Stack section's PostgreSQL/Redis/Kafka are aspirational; live persistence is SQLite + MongoDB only.
+- **`processInbound` split:** the 412-line message-loop function was split into `handleCommand` / `runStateIntercepts` / `deliverAnswer` (now 221 lines), gated behind a 12-test characterization harness (`src/gateway/inbound.flow.test.ts`); behavior preserved, backend boots. `npm test` → 107/107.
+- **Pending:** B9 history persistence, the remaining duplicate/contradiction cleanups, and the Phase-5 (query-pipeline) extraction.
+
+---
+
 ## Problem Statement
 
 Singapore's digital transformation has created systemic barriers for vulnerable citizens (seniors 65+, persons with disabilities, low digital literacy individuals) when navigating institutional correspondence (tax, healthcare, housing, employment, legal notices). Current systems treat everyone identically, leading to missed appointments, unpaid fines, lost benefits, and erosion of trust.

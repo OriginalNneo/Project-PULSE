@@ -9,10 +9,17 @@
 ## Architecture
 - **Backend**: Node.js/Express (TypeScript), 9 microservices behind API Gateway
 - **Frontend**: React/Next.js, 9 pages, WCAG 2.2 AA compliant
-- **Database**: PostgreSQL 14+ (schema-per-service), Redis 7+, Kafka
+- **Database**: live persistence is **SQLite** (customers/CPF/cases) + **MongoDB Atlas** (CPF knowledge, escalation `ccu_queue`, slang). PostgreSQL/Redis/Kafka were aspirational only; their npm deps (`pg`/`ioredis`/`kafkajs`) were removed 2026-06-26 (zero usage).
 - **Auth**: Singpass/Corppass, JWT in httpOnly cookies
 - **AI**: OpenClaw multi-agent framework with Orchestrator → Domain → Language/Dialect → Accessibility → Guardian pipeline
 - **Security**: 4-ring model (Edge → API Gateway → Services → Data)
+
+## Recent changes (2026-06-26 — self-test / refactor pass 1)
+- See `tests/SELF_TEST_REPORT.md` for the full scorecard. Added a runnable unit suite (`npm test` → 79/79).
+- Fixed: B1 emotion-label gating (joy no longer scores as "rage"/false escalation), B2 typed escalation now carries history via `escalateUser`, B3 whole-word "yes", B4 officer-resolve fires CSAT, B5 no-button offer text, B6 translate defaults to GLM (skips dead HF model), B8 query-agent flags LLM failure instead of caching raw retrieval.
+- Deleted dead code: `services/proxy/` db-proxy microservice (kept mounted stub `proxy/routes.ts`), the unused `/api/v1/officer/*` surface (unmounted), `config/integration.ts`, and the three unused deps above.
+- `processInbound` (was 412 lines) split into `handleCommand` / `runStateIntercepts` / `deliverAnswer` (now 221), behind a 12-test characterization harness (`src/gateway/inbound.flow.test.ts`); behavior preserved, backend boots. `npm test` → 107/107.
+- Pending: B9 history persistence, remaining duplicate/contradiction cleanups, Phase-5 query-pipeline extraction.
 
 ## Service Catalogue
 Correspondence | Vulnerability | Orchestration | Adaptation | Delivery | Notification | Proxy | Analytics | Auth | Billing

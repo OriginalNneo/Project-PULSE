@@ -1,7 +1,7 @@
 import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
-import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory, setQueueQuerySummary } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory, setQueueQuerySummary, type UserPrefs } from "../db/proxy-client.js";
 import { callHermes } from "../services/ai/llmClient.js";
 import { findGuidingSetForQuery } from "../data/knowledge/guiding.js";
 import { synthesizeGuidedAnswer } from "../agents/query/guidedSynthesis.js";
@@ -78,9 +78,10 @@ const OFFICER_AFFIRMATIONS = new Set([
   "yes connect", "i want officer", "want officer",
 ]);
 
-function isOfficerConfirmation(text: string): boolean {
+export function isOfficerConfirmation(text: string): boolean {
   const t = text.toLowerCase().trim();
-  return OFFICER_AFFIRMATIONS.has(t) || t.startsWith("yes") || t.includes("officer") || t.includes("connect me");
+  // /^yes\b/ matches "yes", "yes please", "yes connect me" but NOT "yesterday" (B3).
+  return OFFICER_AFFIRMATIONS.has(t) || /^yes\b/.test(t) || t.includes("officer") || t.includes("connect me");
 }
 
 // Stricter than isOfficerConfirmation — used DURING the guiding-questions flow,
@@ -226,7 +227,9 @@ async function sendReply(
   if (buttons && channel.sendWithButtons) {
     await channel.sendWithButtons(finalText, buttons, true);
   } else {
-    await channel.send(clean, true);
+    // No button support (e.g. WhatsApp): still include the escalation offer text.
+    // (B5: this used to send `clean`, dropping the "tap to connect" prompt entirely.)
+    await channel.send(finalText, true);
   }
 }
 
@@ -539,6 +542,234 @@ export async function recordGuidingAnswer(channel: InboundChannel, userId: strin
   );
 }
 
+/**
+ * Slash/keyword commands: /start, /help, /end, voice on|off, /dialect …. Each command
+ * fully handles the message; returns true when one fired (the caller then returns).
+ */
+async function handleCommand(
+  channel: InboundChannel,
+  userId: string,
+  prefs: UserPrefs,
+  lang: Lang,
+  messageText: string,
+): Promise<boolean> {
+  if (isStartCommand(messageText)) {
+    await channel.send(START_MESSAGE, true).catch(() => null);
+    return true;
+  }
+  if (isHelpCommand(messageText)) {
+    await channel.send(HELP_MESSAGE, true).catch(() => null);
+    return true;
+  }
+  if (isEndCommand(messageText)) {
+    if (getHistory(userId).length > 0) {
+      await endSession(userId, "satisfied", { lang });
+    } else {
+      await resetSession(userId);
+      await channel.send("Chat reset. Ask me anything about CPF whenever you're ready.").catch(() => null);
+    }
+    return true;
+  }
+  const voiceToggle = parseVoiceToggle(messageText);
+  if (voiceToggle !== null) {
+    const enabling = voiceToggle === "on";
+    await upsertUserPrefs({ ...prefs, voice_enabled: enabling }).catch(() => null);
+    const confirm = enabling
+      ? "Voice replies enabled. I'll send a voice note along with every text response. Type *voice off* to disable."
+      : "Voice replies disabled. I'll reply with text only. Type *voice on* to re-enable.";
+    await channel.send(confirm).catch(() => null);
+    return true;
+  }
+  // "/dialect cantonese" → save zh-can; "/dialect off" → clear. Chinese dialect voice
+  // replies use zh-HK-HiuMaanNeural (Cantonese) as the closest Edge TTS voice.
+  const dialectCmd = parseDialectCommand(messageText);
+  if (dialectCmd !== null) {
+    const newDialect = dialectCmd.code;
+    await upsertUserPrefs({ ...prefs, preferred_dialect: newDialect ?? undefined }).catch(() => null);
+    const confirm = newDialect
+      ? `Dialect set to ${DIALECT_LABELS[newDialect] ?? newDialect}. Voice replies will use the matching voice. Type /dialect off to reset.`
+      : "Dialect preference cleared. Voice replies will use the standard voice for your language.";
+    await channel.send(confirm).catch(() => null);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * State-driven intercepts that short-circuit the normal query pipeline: an awaiting
+ * CSAT rating, an officer-offer confirmation, an active officer relay, a mid-flow
+ * guiding-questions answer, and a satisfied closing sign-off. Returns whether the
+ * message was handled (the caller then returns) plus the possibly-updated prefs — the
+ * stale officer-offer clear mutates them and falls through to the normal query path.
+ */
+async function runStateIntercepts(
+  channel: InboundChannel,
+  userId: string,
+  prefs: UserPrefs,
+  lang: Lang,
+  messageText: string,
+): Promise<{ handled: boolean; prefs: UserPrefs }> {
+  // CSAT rating intercept — a bare 1–5 while awaiting_rating is the rating; anything
+  // else closes the rating window (rating skipped) and falls through as a new query.
+  const ratingSession = getActiveSession(userId);
+  if (ratingSession?.status === "awaiting_rating") {
+    const m = messageText.trim().match(/^([1-5])$/);
+    if (m) {
+      const result = await recordRating(userId, ratingSession.sessionId, Number(m[1]));
+      if (result.ok && result.thankYou) await channel.send(result.thankYou).catch(() => null);
+      return { handled: true, prefs };
+    }
+    await resetSession(userId);
+    touchSession(userId, channel.prefix); // begin a fresh session for this message
+    // fall through — handle messageText as a normal new query
+  }
+
+  // Officer confirmation — reuse the rich button path (full history + emotion + AI summary).
+  if (prefs.pendingOfficerOffer && isOfficerConfirmation(messageText)) {
+    await upsertUserPrefs({ ...prefs, pendingOfficerOffer: false }).catch(() => null);
+    await escalateUser(channel, userId);
+    return { handled: true, prefs };
+  }
+
+  // Clear a stale officer-offer flag when the user sends a normal new question (falls through).
+  if (prefs.pendingOfficerOffer && !isOfficerConfirmation(messageText)) {
+    await upsertUserPrefs({ ...prefs, pendingOfficerOffer: false }).catch(() => null);
+    prefs = { ...prefs, pendingOfficerOffer: false };
+  }
+
+  // Active queue relay — an escalated user's message goes straight to the officer dashboard.
+  const queue = await getQueue().catch(() => null);
+  const activeEntry = queue?.find(
+    (e) => e.userId === userId && (e.status === "waiting" || e.status === "assigned"),
+  );
+  if (activeEntry) {
+    await relayToOfficer(activeEntry.queueId, userId, messageText, lang);
+    return { handled: true, prefs };
+  }
+
+  // Guiding-questions answer intercept — escapes: explicit officer request escalates;
+  // an explicit cancel exits; everything else is recorded as the current answer.
+  if (prefs.pendingGuiding) {
+    if (isExplicitOfficerRequest(messageText)) {
+      await upsertUserPrefs({ ...prefs, pendingGuiding: undefined, pendingOfficerOffer: false }).catch(() => null);
+      await escalateUser(channel, userId);
+      return { handled: true, prefs };
+    }
+    if (GUIDING_CANCEL.test(messageText.trim())) {
+      await upsertUserPrefs({ ...prefs, pendingGuiding: undefined }).catch(() => null);
+      let m = "Okay, cancelled. Ask me anything about CPF whenever you're ready.";
+      if (lang !== "en") {
+        const t = await translateText(m, "en", lang).catch(() => null);
+        if (t) m = t.translated_text;
+      }
+      await channel.send(m).catch(() => null);
+      return { handled: true, prefs };
+    }
+    await recordGuidingAnswer(channel, userId, messageText);
+    return { handled: true, prefs };
+  }
+
+  // Satisfied sign-off ("thanks", "bye") after a real exchange → end session + request rating.
+  if (isClosingMessage(messageText) && getHistory(userId).length > 0) {
+    log.info({ userId }, "Closing intent detected — ending session, requesting rating");
+    await endSession(userId, "satisfied", { lang });
+    return { handled: true, prefs };
+  }
+
+  return { handled: false, prefs };
+}
+
+/**
+ * Final delivery stage: build the reply from the query result, append history, run the
+ * escalation analysis (+ >70 distress override), send the reply (editing the thinking
+ * bubble), and synthesize/send a TTS audio reply when voice is wanted. Terminal — the
+ * turn state is finalized by the time this runs, so it's passed in as one context object.
+ */
+async function deliverAnswer(ctx: {
+  channel: InboundChannel;
+  userId: string;
+  prefs: UserPrefs;
+  lang: Lang;
+  messageText: string;
+  triage: ReturnType<typeof classifyQuery>;
+  queryResult: Awaited<ReturnType<typeof runQueryAgent>>;
+  voiceInput: boolean;
+  thinking: Awaited<ReturnType<typeof startThinking>>;
+  emotionPromise: Promise<ScoredEmotion>;
+}): Promise<void> {
+  const { channel, userId, prefs, lang, messageText, triage, queryResult, voiceInput, thinking, emotionPromise } = ctx;
+
+  let reply = queryResult.content || "I wasn't able to find an answer for that. Would you like me to connect you to a CPF officer?";
+
+  // No translation here — the query agent already generates in the user's language
+  // (native generation). Translating again would double-translate the native reply.
+
+  // Intercept **generate_tts**(...) emitted by the LLM — strip it from display text and
+  // capture what the LLM wanted to speak aloud. Keep the plain text for chat_history.
+  const { cleanReply, ttsText: llmTtsText } = interceptTtsCall(reply);
+  reply = cleanReply;
+  const plainBotReply = reply;
+  reply = formatReply(reply, "html"); // strip markdown, bold CPF terms with HTML tags
+
+  // Emotion was scored + pushed to the ring buffer by the .then() at kickoff; await it here.
+  const scored = await emotionPromise;
+
+  // Append user + bot turns to rolling history (the full chat_history at escalation time).
+  // The user turn carries this message's sentiment score for the officer dashboard timeline.
+  appendHistory(
+    userId,
+    { role: "user", content: messageText, ts: new Date().toISOString(), emotion_score: scored.emotion_score, emotion_label: scored.emotion_label },
+    { role: "agent", content: plainBotReply, ts: new Date().toISOString() },
+  );
+
+  // A normal answer means the last turn wasn't an unclear voice note — clear the flag.
+  if (prefs.pendingVoiceUnclear) await upsertUserPrefs({ userId, pendingVoiceUnclear: false }).catch(() => null);
+
+  // Escalation: 5-layer analyzer (triage fallback). High distress (>70) auto-offers the
+  // officer button regardless of keyword layers — the user is clearly struggling.
+  let escalation = analyzeEscalation(messageText, reply, queryResult.confidence, triage);
+  if (!escalation.shouldEscalate && scored.emotion_score > 70) {
+    escalation = {
+      shouldEscalate: true,
+      reason: "explicit_request",
+      offerText: "I can hear this is stressful. A CPF officer can help you directly — tap below to connect.",
+    };
+  }
+  // Store pendingOfficerOffer so a typed "Officer" reply also works.
+  if (escalation.shouldEscalate) {
+    await upsertUserPrefs({ ...prefs, pendingOfficerOffer: true }).catch(() => null);
+    log.info({ userId, reason: escalation.reason }, "Escalation offered to user");
+  }
+
+  // Stop the thinking animation and edit that bubble into the final reply.
+  await thinking.stop();
+  await sendReply(channel, reply, escalation, lang, thinking.messageId)
+    .catch((err: unknown) => log.error(err, "Failed to send reply"));
+
+  // TTS: fire when voice input, voice_enabled pref, OR the LLM explicitly called generate_tts.
+  const wantsVoice = voiceInput || prefs.voice_enabled === true || llmTtsText !== null;
+  if (wantsVoice && channel.sendVoice) {
+    log.info({ userId, lang, trigger: voiceInput ? "voice-input" : llmTtsText ? "llm-tts-call" : "pref" }, "Generating TTS audio reply");
+    // Prefer the text the LLM extracted for TTS; fall back to the full plain reply.
+    const speakText = llmTtsText
+      ? stripMarkdownForTTS(llmTtsText)
+      : stripMarkdownForTTS(formatReply(cleanReply, "plain"));
+    const dialectCode = prefs.preferred_dialect;
+    const tts = await synthesizeSpeech(speakText, lang, prefs.speech_rate ?? 1.0, dialectCode).catch((err: unknown) => {
+      log.error(err, "TTS synthesis failed — text reply already sent");
+      return null;
+    });
+    if (tts?.audioBase64) {
+      await channel.sendVoice(tts.audioBase64, tts.mimeType).catch((err: unknown) =>
+        log.error(err, "Failed to send audio reply"),
+      );
+      log.info({ userId }, "Audio reply sent");
+    } else {
+      log.warn({ userId, lang }, "TTS returned no audio — user received text reply only");
+    }
+  }
+}
+
 export async function processInbound(channel: InboundChannel, msg: InboundMessage): Promise<void> {
   const userId = `${channel.prefix}:${msg.userKey}`;
   const sessionId = `${userId}:${Date.now()}`;
@@ -596,132 +827,15 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   // owns that transition.)
   touchSession(userId, channel.prefix);
 
-  // ── /start and /help ─────────────────────────────────────────────────────────
-  if (isStartCommand(messageText)) {
-    await channel.send(START_MESSAGE, true).catch(() => null);
-    return;
-  }
-  if (isHelpCommand(messageText)) {
-    await channel.send(HELP_MESSAGE, true).catch(() => null);
-    return;
-  }
+  // ── Commands: /start, /help, /end, voice on|off, /dialect — each handles + returns ──
+  if (await handleCommand(channel, userId, prefs, lang, messageText)) return;
 
-  // ── /end — explicit "I'm done", ask for a rating ─────────────────────────────
-  if (isEndCommand(messageText)) {
-    if (getHistory(userId).length > 0) {
-      await endSession(userId, "satisfied", { lang });
-    } else {
-      await resetSession(userId);
-      await channel.send("Chat reset. Ask me anything about CPF whenever you're ready.").catch(() => null);
-    }
-    return;
-  }
-
-  // ── Voice-toggle command ─────────────────────────────────────────────────────
-  const voiceToggle = parseVoiceToggle(messageText);
-  if (voiceToggle !== null) {
-    const enabling = voiceToggle === "on";
-    await upsertUserPrefs({ ...prefs, voice_enabled: enabling }).catch(() => null);
-    const confirm = enabling
-      ? "Voice replies enabled. I'll send a voice note along with every text response. Type *voice off* to disable."
-      : "Voice replies disabled. I'll reply with text only. Type *voice on* to re-enable.";
-    await channel.send(confirm).catch(() => null);
-    return;
-  }
-
-  // ── Dialect command ──────────────────────────────────────────────────────────
-  // "/dialect cantonese" → save zh-can; "/dialect off" → clear preference.
-  // Voice replies for Chinese dialects use zh-HK-HiuMaanNeural (Cantonese) as
-  // the closest Edge TTS voice for southern Chinese speakers.
-  const dialectCmd = parseDialectCommand(messageText);
-  if (dialectCmd !== null) {
-    const newDialect = dialectCmd.code;
-    await upsertUserPrefs({ ...prefs, preferred_dialect: newDialect ?? undefined }).catch(() => null);
-    const confirm = newDialect
-      ? `Dialect set to ${DIALECT_LABELS[newDialect] ?? newDialect}. Voice replies will use the matching voice. Type /dialect off to reset.`
-      : "Dialect preference cleared. Voice replies will use the standard voice for your language.";
-    await channel.send(confirm).catch(() => null);
-    return;
-  }
-
-  // ── CSAT rating intercept ────────────────────────────────────────────────────
-  // If the session is awaiting a rating, a bare 1–5 is the rating (the WhatsApp
-  // path + a typed reply on Telegram). Anything else means the user came back with
-  // a new request — close the rating window (rating skipped) and start fresh.
-  const ratingSession = getActiveSession(userId);
-  if (ratingSession?.status === "awaiting_rating") {
-    const m = messageText.trim().match(/^([1-5])$/);
-    if (m) {
-      const result = await recordRating(userId, ratingSession.sessionId, Number(m[1]));
-      if (result.ok && result.thankYou) await channel.send(result.thankYou).catch(() => null);
-      return;
-    }
-    await resetSession(userId);
-    touchSession(userId, channel.prefix); // begin a fresh session for this message
-    // fall through — handle messageText as a normal new query
-  }
-
-  // ── Officer confirmation path ────────────────────────────────────────────────
-  if (prefs.pendingOfficerOffer && isOfficerConfirmation(messageText)) {
-    await upsertUserPrefs({ ...prefs, pendingOfficerOffer: false }).catch(() => null);
-    await doEscalate(channel, userId, sessionId, messageText, "", lang, null);
-    return;
-  }
-
-  // Clear stale officer-offer flag when user sends a normal new question
-  if (prefs.pendingOfficerOffer && !isOfficerConfirmation(messageText)) {
-    await upsertUserPrefs({ ...prefs, pendingOfficerOffer: false }).catch(() => null);
-    prefs = { ...prefs, pendingOfficerOffer: false };
-  }
-
-  // ── Active queue relay ───────────────────────────────────────────────────────
-  const queue = await getQueue().catch(() => null);
-  const activeEntry = queue?.find(
-    (e) => e.userId === userId && (e.status === "waiting" || e.status === "assigned"),
-  );
-  if (activeEntry) {
-    // Mimic the WhatsApp officer channel: relay the citizen's message straight to the
-    // officer dashboard, silently. No auto-acknowledgement — the officer replies live.
-    await relayToOfficer(activeEntry.queueId, userId, messageText, lang);
-    return;
-  }
-
-  // ── Guiding-questions answer intercept ───────────────────────────────────────
-  // If the user is mid-flow answering guiding questions, this message is an answer,
-  // not a new query. Escape hatches: an explicit officer request escalates; an
-  // explicit cancel exits. Everything else is recorded as the current answer.
-  if (prefs.pendingGuiding) {
-    if (isExplicitOfficerRequest(messageText)) {
-      await upsertUserPrefs({ ...prefs, pendingGuiding: undefined, pendingOfficerOffer: false }).catch(() => null);
-      await doEscalate(channel, userId, sessionId, messageText, "", lang, null);
-      return;
-    }
-    if (GUIDING_CANCEL.test(messageText.trim())) {
-      await upsertUserPrefs({ ...prefs, pendingGuiding: undefined }).catch(() => null);
-      let m = "Okay, cancelled. Ask me anything about CPF whenever you're ready.";
-      if (lang !== "en") {
-        const t = await translateText(m, "en", lang).catch(() => null);
-        if (t) m = t.translated_text;
-      }
-      await channel.send(m).catch(() => null);
-      return;
-    }
-    await recordGuidingAnswer(channel, userId, messageText);
-    return;
-  }
-
-  // ── End-of-chat detection (customer satisfied) ───────────────────────────────
-  // A short, question-free sign-off ("thanks", "that's all", "bye") after at least
-  // one real exchange means the customer is done — end the session and ask for a
-  // rating instead of running the closing line through the query pipeline. Only the
-  // bot-only path reaches here (escalated users relayed above; the officer-close
-  // path ends their session separately). English/Singlish heuristic; non-English
-  // sign-offs fall through to the /end command and the 24h timeout.
-  if (isClosingMessage(messageText) && getHistory(userId).length > 0) {
-    log.info({ userId }, "Closing intent detected — ending session, requesting rating");
-    await endSession(userId, "satisfied", { lang });
-    return;
-  }
+  // ── State intercepts: CSAT rating, officer confirmation, active relay, guiding-flow
+  // answer, satisfied sign-off — each short-circuits the query pipeline. The stale
+  // officer-offer clear updates prefs and falls through, so thread prefs back out.
+  const intercept = await runStateIntercepts(channel, userId, prefs, lang, messageText);
+  prefs = intercept.prefs;
+  if (intercept.handled) return;
 
   // ── Emotion detection kicked off early — runs parallel with LLM pipeline ────
   // Emotion only needs the raw message text; starting it here means it runs
@@ -872,85 +986,10 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     return;
   }
 
-  // ── Build reply ──────────────────────────────────────────────────────────────
-  let reply = queryResult.content || "I wasn't able to find an answer for that. Would you like me to connect you to a CPF officer?";
-
-  // No translation here — the query agent already generates in the user's language
-  // (native generation). Translating again would double-translate the native reply.
-
-  // Intercept **generate_tts**(...) emitted by the LLM — strip it from display
-  // text and capture what the LLM wanted to speak aloud.
-  const { cleanReply, ttsText: llmTtsText } = interceptTtsCall(reply);
-  reply = cleanReply;
-
-  // Save plain text for chat_history before HTML formatting
-  const plainBotReply = reply;
-
-  // Format: strip markdown, bold CPF terms with HTML tags
-  reply = formatReply(reply, "html");
-
-  // Await the emotion result (already scored and pushed to ring buffer by .then() above)
-  const scored = await emotionPromise;
-
-  // Append user + bot turns to rolling history (used as full chat_history at escalation time).
-  // The user turn carries this message's sentiment score for the officer dashboard timeline.
-  appendHistory(
-    userId,
-    { role: "user", content: messageText, ts: new Date().toISOString(), emotion_score: scored.emotion_score, emotion_label: scored.emotion_label },
-    { role: "agent", content: plainBotReply, ts: new Date().toISOString() },
-  );
-
-  // A normal answer means the last turn wasn't an unclear voice note — clear the flag.
-  if (prefs.pendingVoiceUnclear) await upsertUserPrefs({ userId, pendingVoiceUnclear: false }).catch(() => null);
-
-  // ── Escalation analysis ──────────────────────────────────────────────────────
-  // Run the 5-layer escalation analyzer, with triage as fallback.
-  // High distress (score > 70) auto-triggers the officer button regardless of
-  // keyword layers — the user is clearly struggling and needs a human.
-  let escalation = analyzeEscalation(messageText, reply, queryResult.confidence, triage);
-  if (!escalation.shouldEscalate && scored.emotion_score > 70) {
-    escalation = {
-      shouldEscalate: true,
-      reason: "explicit_request",
-      offerText: "I can hear this is stressful. A CPF officer can help you directly — tap below to connect.",
-    };
-  }
-
-  // If escalating, store pendingOfficerOffer so a typed "Officer" reply also works.
-  if (escalation.shouldEscalate) {
-    await upsertUserPrefs({ ...prefs, pendingOfficerOffer: true }).catch(() => null);
-    log.info({ userId, reason: escalation.reason }, "Escalation offered to user");
-  }
-
-  // Stop the thinking animation (awaits any in-flight frame so the answer edit is
-  // the final write) and edit that bubble into the final reply.
-  await thinking.stop();
-  await sendReply(channel, reply, escalation, lang, thinking.messageId)
-    .catch((err: unknown) => log.error(err, "Failed to send reply"));
-
-  // ── TTS: generate and send audio reply ──────────────────────────────────────
-  // Fire when: voice input, voice_enabled pref, OR LLM explicitly called generate_tts.
-  const wantsVoice = voiceInput || prefs.voice_enabled === true || llmTtsText !== null;
-  if (wantsVoice && channel.sendVoice) {
-    log.info({ userId, lang, trigger: voiceInput ? "voice-input" : llmTtsText ? "llm-tts-call" : "pref" }, "Generating TTS audio reply");
-    // Prefer the text the LLM extracted for TTS; fall back to the full plain reply.
-    const speakText = llmTtsText
-      ? stripMarkdownForTTS(llmTtsText)
-      : stripMarkdownForTTS(formatReply(cleanReply, "plain"));
-    const dialectCode = prefs.preferred_dialect;
-    const tts = await synthesizeSpeech(speakText, lang, prefs.speech_rate ?? 1.0, dialectCode).catch((err: unknown) => {
-      log.error(err, "TTS synthesis failed — text reply already sent");
-      return null;
-    });
-    if (tts?.audioBase64) {
-      await channel.sendVoice(tts.audioBase64, tts.mimeType).catch((err: unknown) =>
-        log.error(err, "Failed to send audio reply"),
-      );
-      log.info({ userId }, "Audio reply sent");
-    } else {
-      log.warn({ userId, lang }, "TTS returned no audio — user received text reply only");
-    }
-  }
+  // ── Deliver: build reply, append history, escalation analysis, send + TTS ────
+  await deliverAnswer({
+    channel, userId, prefs, lang, messageText, triage, queryResult, voiceInput, thinking, emotionPromise,
+  });
 }
 
 async function relayToOfficer(
