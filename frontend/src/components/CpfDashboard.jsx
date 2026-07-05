@@ -220,7 +220,6 @@ function botAnswer(subj) {
   return 'Here is some general guidance on your enquiry. For account-specific details, I can connect you to a Customer Correspondence Officer.';
 }
 
-const pill = (on) => ({ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 20px', borderRadius: 24, cursor: 'pointer', fontWeight: 600, fontSize: 16, letterSpacing: '.4px', transition: 'all .2s', background: on ? '#1f8f8d' : 'rgba(255,255,255,.07)', color: on ? '#fff' : 'rgba(255,255,255,.82)', boxShadow: on ? '0 4px 14px rgba(0,0,0,.18)' : 'none' });
 const seg = (on) => ({ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 20, cursor: 'pointer', fontWeight: 600, fontSize: 14.5, transition: 'all .2s', background: on ? '#fff' : 'transparent', color: on ? '#0a6160' : '#667085', boxShadow: on ? '0 1px 2px rgba(16,24,40,.12)' : 'none' });
 const statusStyleFor = (st) => ({ color: (st === 'Active' || st === 'Enrolled' || st === 'Eligible') ? '#1a981e' : '#555', fontWeight: 700, fontSize: 14 });
 const cardShadow = { boxShadow: '0 1px 2px rgba(16,24,40,.04),0 6px 16px rgba(16,24,40,.05)', border: '1px solid #ebedf0' };
@@ -232,6 +231,9 @@ const SENT_IN = { marginTop: 3, fontSize: 11.5, color: '#7a7a7a', fontStyle: 'it
 
 export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1.7, headerColor = '#0a6160', logoSrc = '/cpf-logo.png' }) {
   const [tab, setTab] = useState('incoming');
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [chatView, setChatView] = useState('active'); // 'active' | 'inactive' — which list the dropdown shows
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [people, setPeople] = useState(PEOPLE);
   const [incoming, setIncoming] = useState(MOCK_INCOMING);
   const [active, setActive] = useState(MOCK_ACTIVE);
@@ -413,17 +415,24 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     return ids.map((id) => people[id]);
   }, [incoming, filter, sort]);
 
-  const activeList = useMemo(() => active.map((id) => {
+  const chatRows = useMemo(() => active.map((id) => {
     const p = people[id];
     const t = threads[id] || [];
     const last = t[t.length - 1];
+    // "Idle" = the officer sent the last message and the customer has gone quiet.
+    // For demo cases we don't have per-message timestamps, so derive a stable wait.
+    const idle = last ? last.from === 'officer' : false;
+    const waitH = 2 + hashIdx(id, 5); // deterministic 2–6h "no reply" window
     return {
       id, name: p.name, urgency: p.urgency,
       preview: (last ? last.text : '').replace(/\s+/g, ' ').slice(0, 64),
       isOpen: id === openChatId,
-      showAlert: p.urgency === 'urgent'
+      showAlert: p.urgency === 'urgent',
+      idle, waitH,
     };
   }), [active, threads, openChatId]);
+  const liveChats = chatRows.filter((r) => !r.idle);
+  const idleChats = chatRows.filter((r) => r.idle);
 
   const oc = people[openChatId];
   const hasOpen = !!oc;
@@ -450,19 +459,48 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const avgRespLabel = respDurations.length
     ? fmtDuration(respDurations.reduce((a, b) => a + b, 0) / respDurations.length)
     : '—';
+
+  // Encouraging, number-aware status line for each metric card (text + colour adapt to the value).
+  const openStatus = urgentActive
+    ? { text: `${urgentActive} need attention`, color: '#ca2424' }
+    : active.length === 0
+    ? { text: 'None open', color: '#0a9384' }
+    : { text: 'All on track', color: '#0a9384' };
+  const incomingStatus = incoming.length === 0
+    ? { text: 'All caught up', color: '#0a9384' }
+    : incoming.length >= 6
+    ? { text: 'Busy — dive in', color: '#c98a1e' }
+    : { text: 'Waiting now', color: '#c98a1e' };
+  const respStatus = (() => {
+    if (!respDurations.length) return { text: 'Awaiting first', color: '#6b7280' };
+    const s = respDurations.reduce((a, b) => a + b, 0) / respDurations.length / 1000;
+    if (s <= 60) return { text: 'Lightning fast', color: '#059669' };
+    if (s <= 300) return { text: 'Good pace', color: '#4f46e5' };
+    return { text: 'Pick up the pace', color: '#c98a1e' };
+  })();
+  const resolvedStatus = resolved === 0
+    ? { text: 'Keep going!', color: '#c98a1e' }
+    : resolved < 5
+    ? { text: 'Good start', color: '#0a9384' }
+    : resolved < 10
+    ? { text: 'Great work!', color: '#059669' }
+    : { text: 'On fire! 🔥', color: '#059669' };
+
   const isIncoming = tab === 'incoming';
   const FILTERS = [['all', 'All'], ['urgent', 'Urgent'], ['medium', 'Medium'], ['low', 'Low']];
 
   /* --------------------------------------------------------------- view --- */
 
   return (
-    <div style={{ width: 'calc(100vw / 0.8)', height: 'calc(100vh / 0.8)', transform: 'scale(0.8)', transformOrigin: 'top left', display: 'flex', flexDirection: 'column', background: '#f5f6f8', overflow: 'hidden', color: '#1c1c1c', fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+    <div style={{ width: 'calc(100vw / 0.8)', height: 'calc(100vh / 0.8)', transform: 'scale(0.8)', transformOrigin: 'top left', display: 'flex', flexDirection: 'row', background: '#f5f6f8', overflow: 'hidden', color: '#1c1c1c', fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
       <style>{`
         @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
         @keyframes pulsering{0%{transform:scale(1);opacity:.7}70%{transform:scale(2.4);opacity:0}100%{opacity:0}}
         @keyframes msgIn{from{transform:translateY(6px)}to{transform:none}}
         .cpf-card-hover{transition:transform .18s,box-shadow .18s,border-color .18s}
         .cpf-card-hover:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(16,24,40,.10);border-color:#d8dbe0}
+        .cpf-stat-card{transition:box-shadow .18s}
+        .cpf-nav-item:hover{background:rgba(255,255,255,.1) !important}
         .cpf-icon-btn{transition:background .15s}.cpf-icon-btn:hover{background:#e6e6e6}
         .cpf-send-btn{transition:background .15s}.cpf-send-btn:hover{background:#0c8684}
         .cpf-scroll::-webkit-scrollbar{width:10px;height:10px}
@@ -471,50 +509,43 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         .cpf-input::placeholder{color:#a3a3a3}
       `}</style>
 
-      {/* header */}
-      <div style={{ flex: 'none', height: 64, background: headerColor, display: 'flex', alignItems: 'center', padding: '0 24px', gap: 22, boxShadow: '0 1px 0 rgba(0,0,0,.04), 0 6px 20px rgba(10,97,96,.14)', zIndex: 5 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoSrc} alt="CPF Board" style={{ height: 46, width: 'auto', borderRadius: 5, flex: 'none' }} />
-        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.12, flex: 'none' }}>
-          <span style={{ color: '#fff', fontWeight: 700, fontSize: 23, letterSpacing: '.2px' }}>CPF Queries Dashboard</span>
-          <span style={{ color: 'rgba(255,255,255,.82)', fontStyle: 'italic', fontWeight: 300, fontSize: 13 }}>Customer Correspondence Unit</span>
-        </div>
-        <div style={{ display: 'flex', gap: 12, margin: '0 auto', alignItems: 'center' }}>
-          <div style={pill(isIncoming)} onClick={() => setTab('incoming')}>
-            <span>INCOMING</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 24, height: 24, padding: '0 7px', borderRadius: 12, background: '#fff', color: '#0a6160', fontSize: 13, fontWeight: 700, fontStyle: 'italic' }}>{incoming.length}</span>
-          </div>
-          <div style={pill(!isIncoming)} onClick={() => setTab('chats')}>CURRENT CHATS</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18, flex: 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 16px 4px 5px', borderRadius: 22, background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.5)' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#4749be', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>PL</div>
-            <span style={{ color: '#fff', fontWeight: 300, fontSize: 17 }}>Patricia Lam</span>
-          </div>
-        </div>
-      </div>
+      <NavRail
+        collapsed={navCollapsed}
+        onToggle={() => setNavCollapsed((c) => !c)}
+        isIncoming={isIncoming}
+        setTab={setTab}
+        incomingCount={incoming.length}
+        activeCount={active.length}
+        headerColor={headerColor}
+        logoSrc={logoSrc}
+      />
 
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
       {/* ---------------- INCOMING ---------------- */}
       {isIncoming && (
-        <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto', padding: '28px 38px 64px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
-            <StatCard value={String(active.length)} label="OPEN CHATS" sub={urgentActive ? `${urgentActive} urgent` : 'all calm'} subColor={urgentActive ? '#ca2424' : '#1a981e'} />
-            <StatCard value={String(incoming.length)} label="INCOMING INQUIRIES" sub={incoming.length ? 'waiting now' : 'all clear'} subColor={incoming.length ? '#ca2424' : '#1a981e'} />
-            <StatCard value={avgRespLabel} label="AVG RESPONSE TIME" sub={respDurations.length ? `over ${respDurations.length}` : 'live'} subColor="#1a981e" />
-            <StatCard value={String(resolved)} label="RESOLVED TODAY" sub="Good!" subColor="#1a981e" />
+        <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto', padding: '48px 44px 64px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 24 }}>
+            <StatCard value={String(active.length)} label="OPEN CHATS" sub={openStatus.text} subColor={openStatus.color} accent="#0f9d94" icon={<StatIconChats color="#0f9d94" />} />
+            <StatCard value={String(incoming.length)} label="INCOMING INQUIRIES" sub={incomingStatus.text} subColor={incomingStatus.color} accent="#d97706" icon={<StatIconInbox color="#d97706" />} />
+            <StatCard value={avgRespLabel} label="AVG RESPONSE TIME" sub={respStatus.text} subColor={respStatus.color} accent="#4f46e5" icon={<StatIconClock color="#4f46e5" />} />
+            <StatCard value={String(resolved)} label="RESOLVED TODAY" sub={resolvedStatus.text} subColor={resolvedStatus.color} accent="#059669" icon={<StatIconCheck color="#059669" />} />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '36px 0 20px', flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '56px 0 20px', flexWrap: 'wrap', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
               <svg viewBox="0 0 24 24" width="34" height="30" fill="none" stroke="#1d1d1d" strokeWidth="1.6" strokeLinejoin="round"><path d="M3 5h13v9H8l-4 3v-3H3z" /><path d="M8.5 9.5h11v8h-3v2l-3-2" /></svg>
-              <span style={{ fontSize: 20, fontWeight: 300, letterSpacing: '1.5px' }}>INCOMING QUERIES</span>
+              <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '.2px' }}>INCOMING QUERIES</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 26, height: 26, padding: '0 8px', borderRadius: 13, background: '#0a6160', color: '#fff', fontSize: 14, fontWeight: 700 }}>{queries.length}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: 8 }}>
-                {FILTERS.map(([k, l]) => (
-                  <div key={k} onClick={() => setFilter(k)} style={{ padding: '7px 16px', borderRadius: 20, cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'all .15s', background: filter === k ? '#0a6160' : '#fff', color: filter === k ? '#fff' : '#555', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}>{l}</div>
-                ))}
+                {FILTERS.map(([k, l]) => {
+                  const c = k === 'all' ? '#0a6160' : colorFor(k);
+                  const on = filter === k;
+                  return (
+                    <div key={k} onClick={() => setFilter(k)} style={{ padding: '7px 16px', borderRadius: 20, cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'all .15s', background: on ? c : `${c}16`, color: on ? '#fff' : c, border: `1px solid ${on ? c : `${c}40`}`, boxShadow: on ? `0 2px 8px ${c}55, inset 0 0 0 999px rgba(0,0,0,.14)` : 'none' }}>{l}</div>
+                  );
+                })}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#555' }}>
                 <span style={{ fontWeight: 500 }}>Sort</span>
@@ -549,7 +580,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                     <span style={{ fontSize: 13, fontWeight: 400, color: '#667085', lineHeight: 1.45 }}>{p.preview}</span>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 12 }}>
                       <span style={{ fontStyle: 'italic', fontSize: 13, color: '#9a9a9a' }}>{fmt(p.mins)}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0a6160', letterSpacing: '.3px' }}>Accept →</span>
                     </div>
                   </div>
                 </div>
@@ -571,25 +601,52 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         <div style={{ flex: 1, display: 'flex', minHeight: 0, background: '#f5f6f8' }}>
           {/* left list */}
           <div style={{ flex: 'none', width: 340, background: '#fafbfc', boxShadow: '1px 0 0 #e7e9ec', display: 'flex', flexDirection: 'column', minHeight: 0, zIndex: 1 }}>
-            <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid #e3e5e5' }}>
-              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#222" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5 6h14l3 6v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z" /></svg>
-              <span style={{ fontSize: 26, fontWeight: 600, flex: 1 }}>Active Chats</span>
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="#333"><path d="M7 10l5 5 5-5z" /></svg>
+            {/* dropdown header — switch between Active / Inactive chats */}
+            <div style={{ flex: 'none', position: 'relative', borderBottom: '1px solid #e3e5e5' }}>
+              <div onClick={() => setChatMenuOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}>
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke={chatView === 'inactive' ? '#c98a1e' : '#0a6160'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+                  {chatView === 'inactive'
+                    ? (<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>)
+                    : (<><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5 6h14l3 6v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z" /></>)}
+                </svg>
+                <span style={{ fontSize: 15.5, fontWeight: 700, letterSpacing: '.2px' }}>{chatView === 'inactive' ? 'Inactive Chats' : 'Active Chats'}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: chatView === 'inactive' ? '#c98a1e' : '#0a6160', color: '#fff', fontSize: 11.5, fontWeight: 700 }}>{(chatView === 'inactive' ? idleChats : liveChats).length}</span>
+                <div style={{ flex: 1 }} />
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="#555" style={{ flex: 'none', transform: chatMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}><path d="M7 10l5 5 5-5z" /></svg>
+              </div>
+              {chatMenuOpen && (
+                <div style={{ position: 'absolute', top: '100%', left: 8, right: 8, background: '#fff', borderRadius: 12, boxShadow: '0 8px 28px rgba(16,24,40,.16)', border: '1px solid #e7e9ec', padding: 6, zIndex: 20 }}>
+                  {[['active', 'Active Chats', liveChats.length, '#0a6160'], ['inactive', 'Inactive · no reply', idleChats.length, '#c98a1e']].map(([key, label, count, col]) => (
+                    <div key={key} onClick={() => { setChatView(key); setChatMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: chatView === key ? `${col}12` : 'transparent' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: col, flex: 'none' }} />
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#1c1c1c', flex: 1 }}>{label}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: col, color: '#fff', fontSize: 11, fontWeight: 700 }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto' }}>
-              {activeList.map((row) => (
-                <div key={row.id} onClick={() => open(row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : 'rgba(12,134,132,0.03)', boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: colorFor(row.urgency) }} />
+              {(chatView === 'inactive' ? idleChats : liveChats).map((row) => (
+                <div key={row.id} onClick={() => open(row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : (row.idle ? 'rgba(201,138,30,0.05)' : 'rgba(12,134,132,0.03)'), boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: colorFor(row.urgency), opacity: row.idle ? .45 : 1 }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{row.name}</span>
-                    {row.showAlert && (
+                    <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: row.idle ? '#555' : '#1c1c1c' }}>{row.name}</span>
+                    {row.showAlert && !row.idle && (
                       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#ca2424" strokeWidth="2.4" strokeLinecap="round" style={{ flex: 'none' }}><path d="M12 4v9" /><path d="M12 18.2v.2" /></svg>
                     )}
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 300, color: '#444', display: 'block', marginTop: 4, lineHeight: 1.35, maxHeight: 36, overflow: 'hidden' }}>{row.preview}</span>
-                  <span style={{ fontSize: 12, fontStyle: 'italic', color: '#8a8a8a', display: 'block', marginTop: 5 }}>Just now</span>
+                  <span style={{ fontSize: 13, fontWeight: 300, color: row.idle ? '#777' : '#444', display: 'block', marginTop: 4, lineHeight: 1.35, maxHeight: 36, overflow: 'hidden' }}>{row.preview}</span>
+                  {row.idle
+                    ? <span style={{ fontSize: 12, fontWeight: 600, color: '#c98a1e', display: 'block', marginTop: 5 }}>⏳ No reply · {row.waitH}h</span>
+                    : <span style={{ fontSize: 12, fontWeight: 600, color: '#1a981e', display: 'block', marginTop: 5 }}>● Active now</span>}
                 </div>
               ))}
+              {(chatView === 'inactive' ? idleChats : liveChats).length === 0 && (
+                <div style={{ padding: '20px 18px', fontSize: 13, color: '#9a9a9a', fontStyle: 'italic' }}>
+                  {chatView === 'inactive' ? 'No inactive chats — everyone has replied.' : 'No active chats right now.'}
+                </div>
+              )}
             </div>
           </div>
 
@@ -777,18 +834,133 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
 
 /* ----------------------------------------------------------- subviews --- */
 
-function StatCard({ value, label, sub, subColor }) {
+function NavRail({ collapsed, onToggle, isIncoming, setTab, incomingCount, activeCount, headerColor, logoSrc }) {
+  const width = collapsed ? 96 : 300;
+  const navItem = (active) => ({
+    position: 'relative', display: 'flex', alignItems: 'center', gap: 15,
+    padding: collapsed ? '14px 0' : '13px 16px',
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    borderRadius: 14, cursor: 'pointer', margin: collapsed ? '0 12px' : '0 16px', transition: 'background .15s',
+    background: active ? 'rgba(255,255,255,.17)' : 'transparent',
+    color: active ? '#fff' : 'rgba(255,255,255,.72)',
+    boxShadow: active ? 'inset 0 0 0 1px rgba(255,255,255,.2)' : 'none',
+  });
+  const badge = (n, active) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 26, height: 26, padding: '0 8px', borderRadius: 13, background: active ? '#fff' : 'rgba(255,255,255,.9)', color: headerColor, fontSize: 13, fontWeight: 800, flex: 'none' }}>{n}</span>
+  );
+  // Collapsed: a small count chip pinned to the icon's corner (numbers still visible).
+  const cornerCount = (n) => n > 0 && (
+    <span style={{ position: 'absolute', top: 4, right: 14, minWidth: 20, height: 20, padding: '0 5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, background: '#ffb020', color: '#3d2a00', fontSize: 11.5, fontWeight: 800, boxShadow: `0 0 0 2px ${headerColor}` }}>{n}</span>
+  );
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '20px 24px', ...cardShadow, display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ fontSize: 46, fontWeight: 700, lineHeight: 1, letterSpacing: '-1.5px' }}>{value}</span>
-      <span style={{ fontSize: 15, fontWeight: 500, letterSpacing: '1px', color: '#667085' }}>{label}</span>
-      <span style={{ color: subColor, fontStyle: 'italic', fontSize: 14 }}>{sub}</span>
+    <div style={{ flex: 'none', width, background: headerColor, display: 'flex', flexDirection: 'column', transition: 'width .2s cubic-bezier(.4,0,.2,1)', boxShadow: '2px 0 24px rgba(0,0,0,.18)', zIndex: 6, overflow: 'hidden' }}>
+      {/* Brand — logo stacked above the wordmark so nothing clips (logo is landscape) */}
+      <div style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: collapsed ? 'center' : 'flex-start', gap: 14, padding: collapsed ? '28px 0 22px' : '32px 24px 24px' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={logoSrc} alt="CPF Board" style={{ height: collapsed ? 34 : 52, width: 'auto', maxWidth: collapsed ? 64 : '100%', objectFit: 'contain', borderRadius: 7, flex: 'none' }} />
+        {!collapsed && (
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.28, minWidth: 0 }}>
+            <span style={{ color: '#fff', fontWeight: 700, fontSize: 19, letterSpacing: '.2px' }}>Queries Dashboard</span>
+            <span style={{ color: 'rgba(255,255,255,.68)', fontStyle: 'italic', fontWeight: 300, fontSize: 12.5 }}>Customer Correspondence Unit</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 'none', height: 1, background: 'rgba(255,255,255,.12)', margin: collapsed ? '0 16px' : '0 20px' }} />
+
+      <div style={{ flex: 'none', display: 'flex', flexDirection: 'column', gap: 8, marginTop: 20 }}>
+        <div className="cpf-nav-item" style={navItem(isIncoming)} onClick={() => setTab('incoming')} title="Incoming">
+          <NavInboxIcon active={isIncoming} />
+          {collapsed && cornerCount(incomingCount)}
+          {!collapsed && <span style={{ fontWeight: 600, fontSize: 15.5, flex: 1, whiteSpace: 'nowrap' }}>Incoming</span>}
+          {!collapsed && badge(incomingCount, isIncoming)}
+        </div>
+        <div className="cpf-nav-item" style={navItem(!isIncoming)} onClick={() => setTab('chats')} title="Current chats">
+          <NavChatsIcon active={!isIncoming} />
+          {collapsed && cornerCount(activeCount)}
+          {!collapsed && <span style={{ fontWeight: 600, fontSize: 15.5, flex: 1, whiteSpace: 'nowrap' }}>Current Chats</span>}
+          {!collapsed && activeCount > 0 && badge(activeCount, !isIncoming)}
+        </div>
+      </div>
+
+      <div style={{ flex: 1 }} />
+
+      <div onClick={onToggle} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="cpf-nav-item" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, justifyContent: collapsed ? 'center' : 'flex-start', padding: collapsed ? '13px 0' : '13px 16px', margin: collapsed ? '0 12px 6px' : '0 16px 6px', borderRadius: 14, cursor: 'pointer', color: 'rgba(255,255,255,.66)' }}>
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform .2s', flex: 'none' }}>
+          <path d="M15 6l-6 6 6 6" />
+        </svg>
+        {!collapsed && <span style={{ fontWeight: 500, fontSize: 14, whiteSpace: 'nowrap' }}>Collapse</span>}
+      </div>
+
+      <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: collapsed ? '16px 0 24px' : '16px 24px 24px', borderTop: '1px solid rgba(255,255,255,.16)', justifyContent: collapsed ? 'center' : 'flex-start' }}>
+        <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#4749be', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flex: 'none' }}>PL</div>
+        {!collapsed && (
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25, minWidth: 0 }}>
+            <span style={{ color: '#fff', fontWeight: 600, fontSize: 14.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Patricia Lam</span>
+            <span style={{ color: 'rgba(255,255,255,.6)', fontSize: 11.5, whiteSpace: 'nowrap' }}>Correspondence Officer</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function NavInboxIcon({ active }) {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="24" fill="none" stroke={active ? '#fff' : 'rgba(255,255,255,.78)'} strokeWidth="1.6" strokeLinejoin="round" style={{ flex: 'none' }}>
+      <path d="M3 5h13v9H8l-4 3v-3H3z" /><path d="M8.5 9.5h11v8h-3v2l-3-2" />
+    </svg>
+  );
+}
+function NavChatsIcon({ active }) {
+  return (
+    <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke={active ? '#fff' : 'rgba(255,255,255,.78)'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5 6h14l3 6v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z" />
+    </svg>
+  );
+}
+function StatIconChats({ color }) {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 9 9 0 0 1-3.6-.7L3 21l1.8-4.8A8.4 8.4 0 1 1 21 11.5z" /></svg>
+  );
+}
+function StatIconInbox({ color }) {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke={color} strokeWidth="1.9" strokeLinejoin="round"><path d="M3 5h13v9H8l-4 3v-3H3z" /><path d="M8.5 9.5h11v8h-3v2l-3-2" /></svg>
+  );
+}
+function StatIconClock({ color }) {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></svg>
+  );
+}
+function StatIconCheck({ color }) {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+  );
+}
+function StatCard({ value, label, sub, subColor, accent, icon }) {
+  return (
+    <div className="cpf-stat-card" style={{ position: 'relative', overflow: 'hidden', background: `linear-gradient(145deg, ${accent}14 0%, ${accent}09 34%, #f4f6f9 100%)`, borderRadius: 20, padding: '22px 24px', border: '1px solid #e7eaee', boxShadow: '0 1px 2px rgba(16,24,40,.03), 0 10px 26px rgba(16,24,40,.05)', display: 'flex', flexDirection: 'column', gap: 12, minHeight: 150 }}>
+      {/* header: icon + what the metric is */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: `${accent}20`, boxShadow: `inset 0 0 0 1px ${accent}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>{icon}</div>
+        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.9px', color: '#7c8698', textTransform: 'uppercase', lineHeight: 1.3 }}>{label}</span>
+      </div>
+      {/* value + adaptive status */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+        <span style={{ fontSize: 40, fontWeight: 800, lineHeight: 1.5, letterSpacing: '-1.8px', color: '#101828', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 20, background: `${subColor}16`, color: subColor, fontWeight: 700, fontSize: 12.5, whiteSpace: 'nowrap', boxShadow: `inset 0 0 0 1px ${subColor}2b`, marginBottom: 4 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: subColor, flex: 'none' }} />
+          {sub}
+        </span>
+      </div>
     </div>
   );
 }
