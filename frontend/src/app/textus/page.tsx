@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BackHomeButton from "@/components/BackHomeButton";
 
 const PREFILL =
   "[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.";
@@ -93,6 +94,7 @@ export default function TextUsDemoPage() {
       padding: "48px 24px",
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     }}>
+      <BackHomeButton />
       <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, fontWeight: 500, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 32 }}>
         CPF Text Us — Demo
       </p>
