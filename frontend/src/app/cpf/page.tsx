@@ -280,15 +280,20 @@ function PulseWidget() {
     <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",fontFamily:FONT}}>
       {open&&(
         <div style={{width:360,height:500,background:CPF.white,borderRadius:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
-          <div style={{background:CPF.teal,borderBottom:`4px solid ${CPF.lime}`,color:CPF.white,padding:"11px 14px",display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
-            <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="26" style={{filter:"brightness(0) invert(1)",flexShrink:0}} />
-            <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13}}>PULSE Virtual Assistant</div><div style={{fontSize:11,opacity:.8}}>CPF Board</div></div>
-            <div style={{display:"flex",gap:3}}>
-              {CHAT_LANGS.map(x=>(
-                <button key={x.c} onClick={()=>setLang(x.c)} style={{background:lang===x.c?"rgba(255,255,255,.9)":"rgba(255,255,255,.18)",color:lang===x.c?CPF.teal:CPF.white,border:"none",borderRadius:3,padding:"2px 6px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{x.l}</button>
-              ))}
-            </div>
-            <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:CPF.white,fontSize:20,cursor:"pointer",padding:"0 2px"}}>×</button>
+          <div style={{background:CPF.teal,borderBottom:`4px solid ${CPF.lime}`,color:CPF.white,padding:"11px 14px",display:"flex",alignItems:"center",gap:9,flexShrink:0,whiteSpace:"nowrap"}}>
+            <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{filter:"brightness(0) invert(1)",flexShrink:0}} />
+            <div style={{flex:1,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis"}}>PULSE Virtual Assistant</div>
+            <button aria-label="Close chat" onClick={()=>setOpen(false)}
+              style={{appearance:"none",WebkitAppearance:"none",boxSizing:"border-box",width:30,height:30,padding:0,margin:0,flexShrink:0,borderRadius:"50%",border:"2px solid rgba(255,255,255,.5)",background:"rgba(255,255,255,.16)",color:CPF.white,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"background .15s"}}
+              onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background="rgba(255,255,255,.3)";}}
+              onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background="rgba(255,255,255,.16)";}}>
+              <Icon size={14} path={ICONS.close} />
+            </button>
+          </div>
+          <div style={{display:"flex",gap:6,padding:"8px 14px",borderBottom:`1px solid ${CPF.border}`,background:CPF.white,flexShrink:0}}>
+            {CHAT_LANGS.map(x=>(
+              <button key={x.c} onClick={()=>setLang(x.c)} style={{background:lang===x.c?CPF.teal:CPF.bg,color:lang===x.c?CPF.white:CPF.mid,border:`1px solid ${lang===x.c?CPF.teal:CPF.border}`,borderRadius:14,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{x.l}</button>
+            ))}
           </div>
           <div ref={logRef} style={{flex:1,overflowY:"auto",padding:"12px",display:"flex",flexDirection:"column",gap:9,background:"#f4f5f6"}}>
             {msgs.map((m,i)=>(
