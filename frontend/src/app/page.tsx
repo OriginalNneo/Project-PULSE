@@ -229,7 +229,7 @@ export default function HomePage() {
         <div style={{ position: "absolute", bottom: -160, left: -100, width: 420, height: 420, borderRadius: "50%", background: `radial-gradient(circle, ${PASTELS[0].bg} 0%, transparent 70%)`, opacity: 0.7, filter: "blur(10px)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", top: "30%", left: "58%", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${PASTELS[3].bg} 0%, transparent 70%)`, opacity: 0.55, filter: "blur(10px)", pointerEvents: "none" }} />
 
-        <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "56px 24px 96px", maxWidth: 900, margin: "0 auto" }}>
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "48px 24px", minHeight: "calc(100vh - 78px)", maxWidth: 1280, margin: "0 auto", boxSizing: "border-box" as const }}>
 
           {/* Pill badge */}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: PASTELS[0].bg, borderRadius: 100, padding: "7px 18px", fontSize: 12, fontWeight: 700, letterSpacing: 1.3, color: PASTELS[0].fg, marginBottom: 32, textTransform: "uppercase" as const }}>
@@ -237,7 +237,7 @@ export default function HomePage() {
           </div>
 
           {/* Headline */}
-          <h1 style={{ fontFamily: FONT_HEADING, fontSize: "clamp(34px, 6.4vw, 72px)", fontWeight: 600, lineHeight: 1.12, letterSpacing: -0.5, color: C.teal, marginBottom: 24 }}>
+          <h1 style={{ fontFamily: FONT_HEADING, fontSize: "clamp(34px, 5.6vw, 84px)", fontWeight: 600, lineHeight: 1.1, letterSpacing: -0.6, color: C.teal, marginBottom: 24 }}>
             <span style={{ display: "block", whiteSpace: "nowrap" as const }}>Government correspondence,</span>
             <span style={{ display: "block", whiteSpace: "nowrap" as const }}>made human</span>
           </h1>

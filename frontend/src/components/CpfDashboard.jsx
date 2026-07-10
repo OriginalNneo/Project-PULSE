@@ -137,7 +137,17 @@ const PEOPLE = (function () {
       summary: 'User is requesting a statement of her CPF contribution history for a loan application.', q: 'How do I get my contribution history statement?' },
     { id: 'nurul', name: 'Nurul Aisyah', sal: 'Ms Nurul', nric: 'S9512345M', age: 30, phone: '+65 9333 4444', dob: '06 Oct 1995', address: 'Blk 145 Tampines St 12, #10-04', language: 'Malay', urgency: 'medium', sentiment: 'confused', subject: 'First CPF for new job', preview: 'New to the workforce and asking how employer CPF contributions and allocation work\u2026', mins: 3,
       balances: { oa: '$2,410', ma: '$640', ra: '$0' },
-      summary: 'User is new to the workforce and is asking how employer CPF contributions and account allocation work.', q: 'I just started work \u2014 how does CPF actually work?' }
+      summary: 'User is new to the workforce and is asking how employer CPF contributions and account allocation work.', q: 'I just started work \u2014 how does CPF actually work?' },
+    // No `q` field \u2192 its thread ends on the officer greeting, so on accept it lands in the
+    // "Inactive \u00b7 no reply" bucket. Dated 2h back to exercise the auto-switch dropdown feature.
+    { id: 'harpreet', name: 'Harpreet Singh', sal: 'Mr Singh', nric: 'S7434512P', age: 51, phone: '+65 9445 1200', dob: '19 Apr 1975', address: 'Blk 264 Bukit Panjang Ring Rd, #11-45', urgency: 'medium', sentiment: 'neutral', subject: 'CPF LIFE plan switch', preview: 'Asked about switching his CPF LIFE plan and has not replied since our last message\u2026', mins: 120,
+      balances: { oa: '$44,300', ma: '$21,100', ra: '$71,500' },
+      summary: 'User asked how to switch his CPF LIFE plan and has not responded to the officer\u2019s reply.' },
+    // Already-active case whose last message is 2.5h old \u2192 starts in the "Inactive \u00b7 no reply"
+    // bucket, to test the time-based split. Opening or replying re-activates it.
+    { id: 'meng', name: 'Ong Bee Choo', sal: 'Madam Ong', nric: 'S6534210Q', age: 60, phone: '+65 9330 7788', dob: '08 Feb 1966', address: 'Blk 511 Bedok Nth St 3, #12-32', urgency: 'low', sentiment: 'neutral', subject: 'CPF LIFE monthly payout', preview: 'Confirmed her payout details earlier and has not messaged since\u2026', mins: 150,
+      balances: { oa: '$18,900', ma: '$23,400', ra: '$102,300' },
+      summary: 'User asked to confirm her CPF LIFE monthly payout details.', q: 'Just checking \u2014 is my payout amount correct?' }
   ];
   const out = {};
   raw.forEach(function (p) {
@@ -152,8 +162,8 @@ const PEOPLE = (function () {
 })();
 
 // Seed lists for the mock cases (heera's original incoming / active split).
-const MOCK_INCOMING = ['nurul', 'raj', 'lim', 'wong', 'ahamed', 'lee', 'siti', 'thomas', 'goh'];
-const MOCK_ACTIVE = ['tan', 'priya', 'chen'];
+const MOCK_INCOMING = ['nurul', 'raj', 'lim', 'wong', 'ahamed', 'lee', 'siti', 'thomas', 'goh', 'harpreet'];
+const MOCK_ACTIVE = ['tan', 'priya', 'chen', 'meng'];
 const MOCK_THREADS = Object.fromEntries(Object.entries(PEOPLE).map(([id, p]) => [id, p.thread.slice()]));
 // Fuller back-and-forth for the active (open) chats so they read like live conversations.
 Object.assign(MOCK_THREADS, {
@@ -256,6 +266,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const acceptedRef = useRef(new Set());   // locally-accepted ids (no backend "assign" route)
   const removedRef = useRef(new Set());    // locally-resolved ids (mock + live) — don't re-show on refetch
   const acceptTimesRef = useRef(new Map()); // id → accept timestamp (ms), set once on accept; cleared on resolve
+  const activityRef = useRef({});          // id → last-message time (ms); drives the 2h active/inactive split
 
   useEffect(() => {
     const el = msgRef.current;
@@ -321,6 +332,10 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     setOpenChatId(id);
     setInfoTab('info');
     setTab('chats');
+    // Opening a case always brings it into the Active list — accepting counts as fresh
+    // activity, so restamp its last-message time and show the Active bucket.
+    activityRef.current[id] = Date.now();
+    setChatView('active');
   }, []);
 
   // Officer marks the case resolved → drops it from the live queue (PATCH backend).
@@ -390,6 +405,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     // Optimistic append for instant feedback; the backend persists it to chat_history,
     // so the next refetch shows it interleaved chronologically (no duplicate).
     setThreads((t) => ({ ...t, [id]: [...(t[id] || []), { from: 'officer', text }] }));
+    activityRef.current[id] = Date.now(); // officer message counts as activity → keeps the chat Active
     setDraft('');
     try {
       await fetch(`${API_BASE}/dashboard/send/${id}`, {
@@ -419,18 +435,28 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     const p = people[id];
     const t = threads[id] || [];
     const last = t[t.length - 1];
-    // "Idle" = the officer sent the last message and the customer has gone quiet.
-    // For demo cases we don't have per-message timestamps, so derive a stable wait.
-    const idle = last ? last.from === 'officer' : false;
-    const waitH = 2 + hashIdx(id, 5); // deterministic 2–6h "no reply" window
+    // "Inactive" = no message from EITHER side (officer replies count) for over 2h.
+    // Sending/opening restamps activityRef; otherwise fall back to the case's age.
+    const stamped = activityRef.current[id];
+    const lastMins = stamped != null ? Math.max(0, Math.round((Date.now() - stamped) / 60000)) : (p.mins ?? 0);
+    const idle = lastMins > 120;
+    const waitH = Math.max(1, Math.floor(lastMins / 60)); // whole-hours "no reply" window
+    // "Active now" presence is the customer's own recency — officer replies don't make the
+    // customer present. Demo proxy: the case age (no per-message timestamps in mock data).
+    const custMins = p.mins ?? 0;
     return {
       id, name: p.name, urgency: p.urgency,
       preview: (last ? last.text : '').replace(/\s+/g, ' ').slice(0, 64),
       isOpen: id === openChatId,
       showAlert: p.urgency === 'urgent',
-      idle, waitH,
+      idle, waitH, custMins,
     };
   }), [active, threads, openChatId]);
+  // Active-chat presence, based on when the customer last replied: green "Active now" if
+  // just now, otherwise their last-reply time in grey italics.
+  const custStatus = (m) => (m < 3
+    ? <span style={{ color: '#1a981e', fontWeight: 600 }}>● Active now</span>
+    : <span style={{ color: '#9a9a9a', fontStyle: 'italic' }}>{fmt(m)}</span>);
   const liveChats = chatRows.filter((r) => !r.idle);
   const idleChats = chatRows.filter((r) => r.idle);
 
@@ -639,7 +665,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                   <span style={{ fontSize: 13, fontWeight: 300, color: row.idle ? '#777' : '#444', display: 'block', marginTop: 4, lineHeight: 1.35, maxHeight: 36, overflow: 'hidden' }}>{row.preview}</span>
                   {row.idle
                     ? <span style={{ fontSize: 12, fontWeight: 600, color: '#c98a1e', display: 'block', marginTop: 5 }}>⏳ No reply · {row.waitH}h</span>
-                    : <span style={{ fontSize: 12, fontWeight: 600, color: '#1a981e', display: 'block', marginTop: 5 }}>● Active now</span>}
+                    : <span style={{ fontSize: 12, display: 'block', marginTop: 5 }}>{custStatus(row.custMins)}</span>}
                 </div>
               ))}
               {(chatView === 'inactive' ? idleChats : liveChats).length === 0 && (
@@ -659,7 +685,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                   <span style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.1 }}>{oc.name}</span>
-                  <span style={{ fontSize: 13, color: '#1a981e', fontWeight: 500, marginTop: 2 }}>● Active now · {oc.subject}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>{custStatus(oc.mins ?? 0)}<span style={{ color: '#8a8a8a' }}> · {oc.subject}</span></span>
                 </div>
                 <button onClick={() => resolveCase(openChatId)} title="Resolve this case" style={{ flex: 'none', border: 'none', cursor: 'pointer', background: '#0a6160', color: '#fff', fontWeight: 700, fontSize: 14, padding: '11px 20px', borderRadius: 24, boxShadow: '0 2px 8px rgba(10,97,96,.32)', letterSpacing: '.3px' }}>✓ Resolve</button>
                 <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#fff', boxShadow: '2px 2px 6px rgba(0,0,0,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
