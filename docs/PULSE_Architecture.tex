@@ -1,0 +1,1667 @@
+% ============================================================
+%  PULSE Framework — Full System Architecture Document
+%  People-centric Framework for Correspondence (PFC)
+%  Singapore Government Digital Inclusion Platform
+% ============================================================
+\documentclass[12pt,a4paper]{article}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{listings}
+\usepackage{minted}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{tikz}
+\usepackage{pgf-umlsd}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{mdframed}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{fontawesome5}
+
+% ── Colour palette ───────────────────────────────────────────────────────────
+\definecolor{pulseteal}{HTML}{0b6160}
+\definecolor{pulsecream}{HTML}{fffcf5}
+\definecolor{pulsegold}{HTML}{d4a017}
+\definecolor{pulsered}{HTML}{c0392b}
+\definecolor{pulseblue}{HTML}{2c6fad}
+\definecolor{codebg}{HTML}{f4f4f4}
+\definecolor{bordercolor}{HTML}{cccccc}
+
+% ── Hyperref ─────────────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=pulseteal,
+  urlcolor=pulseblue,
+  citecolor=pulseteal,
+  pdftitle={PULSE Framework — System Architecture},
+  pdfauthor={PULSE Engineering Team},
+  pdfsubject={Architecture, AI, Security, Machine Learning},
+}
+
+% ── Header / footer ──────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{pulseteal}{\textbf{PULSE Framework}}}
+\fancyhead[R]{\small\textcolor{gray}{System Architecture — Confidential}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Section formatting ───────────────────────────────────────────────────────
+\titleformat{\section}
+  {\large\bfseries\color{pulseteal}}{\thesection}{1em}{}[\titlerule]
+\titleformat{\subsection}
+  {\normalsize\bfseries\color{pulseteal}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+% ── Code listings ────────────────────────────────────────────────────────────
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{bordercolor},
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+}
+
+% ── Callout box ──────────────────────────────────────────────────────────────
+\newmdenv[
+  backgroundcolor=pulsecream,
+  linecolor=pulseteal,
+  linewidth=1pt,
+  leftmargin=0pt,
+  rightmargin=0pt,
+  innerleftmargin=10pt,
+  innerrightmargin=10pt,
+  innertopmargin=6pt,
+  innerbottommargin=6pt,
+]{callout}
+
+% ── Title ─────────────────────────────────────────────────────────────────────
+\title{
+  \vspace{-1cm}
+  {\color{pulseteal}\rule{\linewidth}{2pt}}\\[0.4cm]
+  {\Huge\bfseries\color{pulseteal} PULSE Framework}\\[0.2cm]
+  {\Large People-centric Framework for Correspondence}\\[0.2cm]
+  {\large\textit{Full System Architecture — Security, Protocols, AI/ML Pipeline}}\\[0.3cm]
+  {\color{pulseteal}\rule{\linewidth}{1pt}}\\[0.3cm]
+  {\normalsize Singapore Government Digital Inclusion Platform}
+}
+\author{PULSE Engineering Team}
+\date{July 2026 — Version 3.0 (Live Production)}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\begin{document}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{callout}
+\textbf{Classification:} Internal / Engineering Reference \\
+\textbf{Status:} Live production system — Telegram bot active, WhatsApp Meta integration wired \\
+\textbf{Repository:} \texttt{OriginalNneo/Project-PULSE} (branch: \texttt{main}) \\
+\textbf{Live endpoint:} \texttt{https://pulse.nathanielbuilds.cc}
+\end{callout}
+
+\vspace{1em}
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Executive Overview}
+% ─────────────────────────────────────────────────────────────────────────────
+
+PULSE (People-centric Framework for Correspondence) is a multi-channel AI-mediated
+correspondence platform designed to eliminate the digital accessibility gap for
+Singapore's most vulnerable citizens — seniors 65+, persons with disabilities, and
+individuals with low digital literacy. The system bridges CPF (Central Provident Fund)
+services and citizens through empathetic, adaptive, multilingual AI agents.
+
+\begin{callout}
+\textbf{Scope of this document:} The live production system comprising a Node.js/Express
+TypeScript backend, a Next.js 14 frontend, an AI multi-agent pipeline (OpenClaw), HuggingFace
+Inference API models, a z.ai GLM-5-Turbo LLM (Hermes), MongoDB Atlas and SQLite persistence,
+a Telegram Bot and WhatsApp Meta Cloud API channel layer, and a Caddy reverse proxy serving
+\texttt{pulse.nathanielbuilds.cc}. Aspirational infrastructure (Kafka, Redis, PostgreSQL,
+Kubernetes) is documented in Section~\ref{sec:aspirational} and has not yet been provisioned.
+\end{callout}
+
+\subsection{PULSE Acronym}
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Letter} & \textbf{Pillar} & \textbf{Design Intent} \\
+\midrule
+\textbf{P} & People-Centric   & Adaptive to each individual, not demographic buckets \\
+\textbf{U} & Universal        & WCAG 2.2 AA by default, all channels, all languages \\
+\textbf{L} & Linked           & Seamless analog-to-digital bridge; physical mail + voice + digital \\
+\textbf{S} & Secure \& Supportive & Scam-resistant by design; empowering without exposing \\
+\textbf{E} & Empathetic        & Keeps a finger on the community's emotional pulse \\
+\bottomrule
+\end{tabular}
+
+\subsection{Target User Populations}
+
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{Group} & \textbf{Primary Barrier} & \textbf{Singapore Population} \\
+\midrule
+Seniors (65+)             & Low digital literacy, scam anxiety, declining vision & $\sim$1 in 4 by 2030 \\
+Persons with Disabilities & Screen-reader incompatibility, cognitive overload & $\sim$3.4\% of residents \\
+Low Digital Literacy      & Language barriers, unfamiliarity with gov portals & Cross-demographic \\
+Caregivers / Proxies      & Need delegated access with audit trail & Significant family-care market \\
+\bottomrule
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{High-Level System Architecture}
+\label{sec:highlevel}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The production system is a monorepo with two deployed processes on a single VPS,
+fronted by a Caddy reverse proxy. The overall concentric-ring security model governs
+both the live production tier and the planned enterprise expansion.
+
+\subsection{Concentric-Ring Security Model}
+
+\begin{lstlisting}
+┌───────────────────────────────────────────────────────────────────────┐
+│  INTERNET / CLIENTS                                                   │
+│  (Telegram users, WhatsApp users, browser users, Caddy)              │
+└────────────────────────────────┬──────────────────────────────────────┘
+                                 │
+                                 ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  RING 1 — Edge & Security Perimeter                                  │
+│  Caddy (TLS/HTTPS), HSTS, security headers (Helmet.js),              │
+│  CORS enforcement, HMAC-SHA256 webhook verification                   │
+└────────────────────────────────┬──────────────────────────────────────┘
+                                 │
+                                 ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  RING 2 — API Gateway (Express.js :3000)                             │
+│  JWT/cookie auth, role-based access, rate limiting,                   │
+│  request ID tracing, Zod schema validation                            │
+└────────────────────────────────┬──────────────────────────────────────┘
+                                 │
+                                 ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  RING 3 — Application Services (Modular Core)                        │
+│  9 service modules + AI agent system (OpenClaw)                       │
+│  Inbound processor, session manager, escalation pipeline              │
+└────────────────────────────────┬──────────────────────────────────────┘
+                                 │
+                                 ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  RING 4 — Data & Integration Layer                                   │
+│  SQLite (customers, sessions), MongoDB Atlas (knowledge, queue),      │
+│  HuggingFace Inference API, z.ai GLM Hermes, Telegram Bot API,        │
+│  WhatsApp Meta Cloud API                                               │
+└───────────────────────────────────────────────────────────────────────┘
+\end{lstlisting}
+
+\subsection{Live Production Deployment}
+
+\begin{lstlisting}
+                   DNS: pulse.nathanielbuilds.cc
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │  Caddy (HTTPS)  │  TLS auto-managed (Let's Encrypt)
+                    │  :443 → :80     │  HTTP/2, HSTS enforced
+                    └────────┬────────┘
+                             │  Route rules:
+           ┌─────────────────┼────────────────────┐
+           │                 │                    │
+     /dashboard/*       /webhook/*           /api/*, /query,
+     /api/*, etc.       /dashboard/ws         everything else
+           │                 │                    │
+           ▼                 ▼                    ▼
+  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+  │  Backend     │   │  Backend     │   │  Frontend    │
+  │  Express     │   │  Express     │   │  Next.js 14  │
+  │  :3000       │   │  :3000       │   │  :3001       │
+  └──────────────┘   └──────────────┘   └──────────────┘
+  pm2: pulse-backend                    pm2: pulse-frontend
+\end{lstlisting}
+
+Both processes are managed by \textbf{pm2} running from \texttt{/nat/Project-PULSE}.
+The backend runs via \texttt{npx tsx src/gateway/index.ts} (TypeScript executed
+directly by tsx; no compile step). The frontend runs via \texttt{npx next start -p 3001}.
+Auto-deploy is triggered by GitHub webhook \texttt{POST /webhook/github} on pushes
+to \texttt{main}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Ring 1 — Edge, TLS, and Security Headers}
+\label{sec:ring1}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Caddy Reverse Proxy}
+
+Caddy handles TLS certificate provisioning and renewal automatically via ACME (Let's Encrypt).
+It enforces:
+\begin{itemize}[noitemsep]
+  \item \textbf{HTTPS-only}: all HTTP redirected to HTTPS (301)
+  \item \textbf{HTTP/2}: multiplexed, head-of-line-blocking eliminated
+  \item \textbf{WebSocket upgrades}: \texttt{/dashboard/ws} proxied with \texttt{Upgrade}/\texttt{Connection}
+    headers preserved
+  \item \textbf{Route isolation}: \texttt{/webhook/*} endpoints not exposed to the public frontend path
+\end{itemize}
+
+\subsection{HTTP Security Headers (Helmet.js)}
+
+The Express gateway applies \texttt{helmet()} with the following headers on every response:
+
+\begin{tabular}{@{}lp{9cm}@{}}
+\toprule
+\textbf{Header} & \textbf{Value / Policy} \\
+\midrule
+\texttt{Strict-Transport-Security} & \texttt{max-age=31536000; includeSubDomains} — forces HTTPS for 1 year \\
+\texttt{Content-Security-Policy}   & \texttt{default-src 'self'; script-src 'self'} — blocks inline scripts/XSS \\
+\texttt{X-Content-Type-Options}    & \texttt{nosniff} — prevents MIME sniffing attacks \\
+\texttt{X-Frame-Options}           & \texttt{DENY} — blocks clickjacking via iframes \\
+\texttt{Referrer-Policy}           & \texttt{strict-origin-when-cross-origin} \\
+\texttt{X-DNS-Prefetch-Control}    & \texttt{off} \\
+\texttt{Permissions-Policy}        & Restricts camera, microphone, geolocation to \texttt{'none'} \\
+\bottomrule
+\end{tabular}
+
+\subsection{CORS Policy}
+
+CORS is enforced at the Express middleware layer. The allowed origins are:
+
+\begin{lstlisting}[language=]
+Allowed Origins:
+  - http://localhost:3001    (local dev frontend)
+  - https://pulse.nathanielbuilds.cc  (production)
+
+Allowed Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Allowed Headers: Content-Type, Authorization, X-Request-Id
+Credentials: true (required for httpOnly cookie transmission)
+\end{lstlisting}
+
+Same-origin requests from the production domain do not trigger CORS preflight —
+the browser omits the \texttt{Origin} header when the scheme, host, and port match.
+
+\subsection{Webhook Authentication — HMAC-SHA256}
+
+Both inbound webhook channels use HMAC-SHA256 for payload authentication.
+
+\subsubsection{Telegram Bot API}
+
+Telegram does not send an HMAC signature by default. The PULSE backend validates
+Telegram messages by checking the \texttt{X-Telegram-Bot-Api-Secret-Token} header
+(optional token set on the webhook registration). The primary defence is that the
+webhook URL is not publicly advertised and the endpoint returns \texttt{200 OK}
+to all requests (Telegram requires this to avoid retries); the token check is a
+secondary gate.
+
+\subsubsection{Meta WhatsApp Cloud API}
+
+The Meta webhook handler at \texttt{POST /webhook/whatsapp} enforces:
+
+\begin{lstlisting}[language=JavaScript]
+// Signature format: "sha256=<hex-digest>"
+const expected = "sha256=" +
+  crypto.createHmac("sha256", process.env.WHATSAPP_APP_SECRET)
+        .update(rawBody)
+        .digest("hex");
+crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(header));
+// timingSafeEqual prevents timing-oracle attacks
+\end{lstlisting}
+
+The \texttt{rawBody} buffer is preserved before JSON parsing via Express
+\texttt{verify} callback, because HMAC must be computed on the raw bytes,
+not the parsed object. An additional \texttt{appsecret\_proof} parameter is
+appended to all outbound Graph API calls:
+
+\[
+\texttt{appsecret\_proof} = \text{HMAC-SHA256}(\texttt{WHATSAPP\_APP\_SECRET},\ \texttt{WHATSAPP\_ACCESS\_TOKEN})
+\]
+
+\subsubsection{GitHub Webhook (Auto-Deploy)}
+
+The GitHub webhook at \texttt{POST /webhook/github} uses the same HMAC-SHA256
+pattern against \texttt{GITHUB\_WEBHOOK\_SECRET}. The handler:
+\begin{enumerate}[noitemsep]
+  \item Verifies signature before any payload processing
+  \item Filters to \texttt{push} events on \texttt{refs/heads/main} only
+  \item Responds \texttt{202 Accepted} immediately (before deploy runs)
+  \item Executes \texttt{deploy/deploy-frontend.sh} asynchronously via \texttt{execFile}
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Ring 2 — API Gateway}
+\label{sec:ring2}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Express Gateway Entry Point (\texttt{src/gateway/index.ts})}
+
+The gateway wires the following middleware stack in order:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Helmet} — security headers
+  \item \textbf{CORS} — origin/method enforcement
+  \item \textbf{Cookie-parser} — parses httpOnly session cookies
+  \item \textbf{Raw body preservation} — \texttt{verify} callback captures \texttt{rawBody: Buffer} before JSON parse (required for HMAC)
+  \item \textbf{JSON body parser} — \texttt{express.json(\{limit: "10mb"\})}
+  \item \textbf{Request ID tracing} — generates \texttt{X-Request-Id} and attaches to \texttt{req}
+  \item \textbf{Rate limiter} — in-memory per-IP, role-aware
+  \item \textbf{Route mounting} — see below
+  \item \textbf{Global error handler} — catches \texttt{AppError} subclasses, returns structured JSON
+\end{enumerate}
+
+\subsection{Route Mounting Table}
+
+\begin{tabular}{@{}llp{6cm}@{}}
+\toprule
+\textbf{Mount Path} & \textbf{Module} & \textbf{Description} \\
+\midrule
+\texttt{/query}              & inbound.ts           & Main citizen query endpoint (text) \\
+\texttt{/query/voice}        & inbound.ts           & Voice/audio query endpoint \\
+\texttt{/dashboard}          & dashboard.ts         & Officer dashboard REST API \\
+\texttt{/dashboard/ws}       & ws.ts                & WebSocket real-time push \\
+\texttt{/webhook/telegram}   & webhook.ts           & Telegram Bot update handler \\
+\texttt{/webhook/whatsapp}   & webhook.ts           & Meta WhatsApp Cloud handler \\
+\texttt{/webhook/github}     & deploy.ts            & GitHub push auto-deploy \\
+\texttt{/api/v1/agents}      & orchestrator/routes  & OpenClaw agent HTTP API \\
+\texttt{/api/v1/correspond.} & correspondence/routes & Service: letters, templates \\
+\texttt{/api/v1/vuln}        & vulnerability/routes  & Service: vulnerability tiers \\
+\texttt{/api/v1/delivery}    & delivery/routes      & Service: multi-channel dispatch \\
+\texttt{/api/v1/proxy}       & proxy/routes         & Service: delegated access \\
+\texttt{/api/v1/analytics}   & analytics/routes     & Service: engagement metrics \\
+\texttt{/api/v1/billing}     & billing/routes       & Service: usage metering \\
+\bottomrule
+\end{tabular}
+
+\subsection{Authentication and JWT}
+
+\begin{lstlisting}
+┌────────────┐    ┌──────────────┐    ┌──────────────────┐
+│  Client    │───▶│  Auth Service │───▶│  Singpass/       │
+│  Browser   │    │              │    │  Corppass IdP     │
+└────────────┘    └──────┬───────┘    └──────────────────┘
+                         │ Issue JWT pair
+                         ▼
+                   httpOnly cookies:
+                   ┌────────────────────────────────────┐
+                   │  access_token  (JWT, 15 min TTL)  │
+                   │  refresh_token (opaque, 7 day TTL) │
+                   └────────────────────────────────────┘
+
+JWT payload:
+{
+  "sub":       "<user_id>",
+  "tenant_id": "<tenant>",
+  "roles":     ["user" | "proxy" | "officer" | "admin"],
+  "lang":      "en" | "zh" | "ms" | "ta",
+  "vuln_tier": "self-service" | "guided" | "high-touch",
+  "iat":       <unix_ts>,
+  "exp":       <unix_ts>,
+  "jti":       "<unique token id>"  // for revocation
+}
+\end{lstlisting}
+
+\textbf{Token revocation:} Revoked JTI values are stored in Redis with TTL equal to
+token expiry. The gateway checks the revocation list on every authenticated request.
+Refresh tokens are rotated on every use — token theft is detectable within one use.
+
+\subsection{Rate Limiting}
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Role} & \textbf{Limit} & \textbf{Storage} \\
+\midrule
+Anonymous       & 10 req/min    & In-memory (per IP)      \\
+Authenticated   & 100 req/min   & In-memory (per user ID) \\
+Admin           & 500 req/min   & In-memory (per user ID) \\
+Service account & 1000 req/min  & In-memory (per service) \\
+\bottomrule
+\end{tabular}
+
+Exceeded limits return \texttt{429 Too Many Requests} with a \texttt{Retry-After}
+header. The Telegram and WhatsApp webhook paths bypass rate limiting (handled
+at channel level by their respective providers).
+
+\subsection{Request Tracing}
+
+Every inbound request receives a unique \texttt{X-Request-Id} (UUIDv4). This ID is:
+\begin{itemize}[noitemsep]
+  \item Attached to the Pino structured logger context for every log line
+  \item Propagated in \texttt{X-Trace-Id} / \texttt{X-Span-Id} headers to downstream calls
+  \item Returned in the response for client-side error correlation
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Ring 3 — Inbound Message Processing Pipeline}
+\label{sec:inbound}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The inbound pipeline is the heart of the live system. It processes every message from
+a Telegram user or WhatsApp user through a multi-stage AI pipeline before delivering
+a reply.
+
+\subsection{Full Processing Pipeline}
+
+\begin{lstlisting}
+Telegram update / WhatsApp webhook
+  │
+  ▼
+[1] CHANNEL ADAPTER
+    telegram.ts / webhook.ts
+    - Validates update type (message | callback_query | voice)
+    - Extracts userId (tg:<chatId> | wa:<phone>), text, voice OGG
+    - Handles inline keyboard callbacks (escalation button, CSAT stars)
+    │
+    ▼
+[2] INBOUND ROUTER (processInbound)
+    src/gateway/inbound.ts
+    │
+    ├── handleCommand()        /end, /start, /help — fast exit
+    ├── runStateIntercepts()   CSAT rating collection, guided Q&A, pending offer
+    │
+    ▼
+[3] PARALLEL PRE-PROCESSING (Promise.all)
+    ├── Emotion Detection   ──▶  HF: j-hartmann/emotion-english-distilroberta-base
+    ├── Language Detection  ──▶  [script] → [HF: xlm-roberta] → [GLM fallback]
+    └── Voice Processing    ──▶  (if voice) HF: openai/whisper-large-v3 + duration
+    │
+    ▼
+[4] TRIAGE CLASSIFICATION
+    src/agents/triage/classifier.ts
+    Cat 3: personal account data (regex)
+    Cat 2: guiding-question topics (regex)
+    Cat 1: public knowledge (default)
+    │
+    ▼
+[5] VOICE CLARITY CHECK (voice only)
+    - durationSec < 1.2s → reject
+    - text.length < 5     → reject
+    - text.length / durationSec < 4 → NOISY ENVIRONMENT path
+    - transcriptionLooksUnclear() → GARBLED path
+    │
+    ▼
+[6] GUIDING QUESTIONS (Cat 2)
+    MongoDB cpf_guiding_questions collection
+    One question asked at a time; synthesises answer after final Q
+    │
+    ▼
+[7] QUERY AGENT (Cat 1 / Cat 3 / completed guided)
+    Emotion trajectory folding → effectiveEmotion
+    Tone directive built → toneDirective(score, label, sustained)
+    RAG retrieval: MongoDB cpf_knowledge
+    GLM-5-Turbo generation (Hermes, z.ai)
+    Response formatted → formatter.ts
+    │
+    ▼
+[8] ESCALATION ANALYSIS
+    analyzeEscalation(query, reply, confidence, triage)
+    5 layers: personal_data | life_event | explicit_request | complaint | bot_failure
+    emotion_score > 70 → auto-escalate
+    │
+    ▼
+[9] DELIVER ANSWER
+    sendReply() → Telegram sendMessage / WhatsApp messages API
+    If escalated → postToQueue() → MongoDB ccu_queue
+    If !langConfident && firstTurn && !English → append soft language hint
+    │
+    ▼
+[10] ASYNC POST-PROCESSING
+    updateQueuePriority() — enriched score (financial + sustained)
+    pushEmotionEvent()   — dashboard ring buffer
+    broadcast() WS       — live dashboard push
+\end{lstlisting}
+
+\subsection{Voice Processing Sub-pipeline}
+
+When a Telegram user sends a voice note (OGG/Opus):
+
+\begin{enumerate}[noitemsep]
+  \item Telegram API: download OGG file via \texttt{getFile} + \texttt{file\_path}
+  \item HuggingFace \texttt{openai/whisper-large-v3}: speech-to-text transcription
+  \item HuggingFace \texttt{audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim}: dimensional audio emotion
+  \item Duration extracted from OGG header (used for noise ratio check)
+  \item Background noise check: $\texttt{len(text)} / \texttt{durationSec} < 4$
+\end{enumerate}
+
+\subsection{Thinking Animation}
+
+During processing, the bot sends a \texttt{💭} typing indicator via
+\texttt{sendChatAction("typing")} with 2-second intervals (Telegram's
+rate limit). The indicator is a best-effort, non-blocking async process;
+failures are caught and logged at \texttt{warn} level and do not affect the reply.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Machine Learning Pipeline}
+\label{sec:ml}
+% ─────────────────────────────────────────────────────────────────────────────
+
+All ML inference is consumed via the HuggingFace Inference API and the z.ai
+GLM-5-Turbo API. No local model weights are stored. The Python bridge module
+(\texttt{src/python-bridge/client.ts}) wraps all HF calls with error handling
+and fallback chains.
+
+\subsection{Models in Production}
+
+\begin{longtable}{@{}p{4.5cm}p{4cm}p{6cm}@{}}
+\toprule
+\textbf{Model} & \textbf{Task} & \textbf{Input / Output} \\
+\midrule
+\endhead
+\texttt{openai/whisper-large-v3} & Speech-to-text (ASR) & OGG audio bytes → transcribed text + language guess \\
+\addlinespace
+\texttt{j-hartmann/emotion-english-distilroberta-base} & Text emotion classification & Text string → \{label: anger/joy/sadness/fear/disgust/surprise/neutral, score: 0–1\} \\
+\addlinespace
+\texttt{audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim} & Dimensional audio emotion & OGG audio bytes → \{valence: 0–1, arousal: 0–1, dominance: 0–1\} \\
+\addlinespace
+\texttt{papluca/xlm-roberta-base-language-detection} & Language identification & Text string → ISO 639-1 code + confidence \\
+\addlinespace
+\texttt{HF\_TRANSLATE\_MODEL} (configurable) & Neural machine translation & (source\_text, src\_lang, tgt\_lang) → translated text \\
+\addlinespace
+\texttt{GLM-5-Turbo} (z.ai, Hermes) & LLM — generation, fallback translation, fallback lang detection & Prompt + context → generated text \\
+\bottomrule
+\end{longtable}
+
+\subsection{Language Detection — Multi-Stage Confidence Pipeline}
+
+\texttt{detectLanguage()} in \texttt{src/python-bridge/client.ts} implements a
+four-stage cascade designed to maximise confidence on Singapore's multilingual
+input space (English, Mandarin, Malay, Tamil, Singlish, code-switching):
+
+\begin{lstlisting}[language=]
+Stage 1 — Script detection (deterministic, confident: true)
+  Unicode range check:
+  Tamil:     U+0B80 – U+0BFF
+  Malayalam: U+0D00 – U+0D7F
+  Devanagari:U+0900 – U+097F  (Hindi)
+  Gurmukhi:  U+0A00 – U+0A7F  (Punjabi)
+  CJK Unified: U+4E00 – U+9FFF (Chinese/Japanese/Korean)
+  → returns {lang, confident: true}
+
+Stage 2 — Malay keyword heuristics (pre-HF, confident: true)
+  16-token list: saya, awak, boleh, nak, lah, mah,
+                 tidak, ada, ini, itu, dan, dengan,
+                 untuk, dari, ke, di
+  Threshold: ≥2 keyword hits in the first 8 tokens
+  Reason: xlm-roberta consistently mislabels Malay → "ru" (Russian)
+  → returns {lang: "ms", confident: true}
+
+Stage 3 — HuggingFace xlm-roberta (ML inference, confident: true)
+  Guard: skip if text < 8 chars (model unreliable on short inputs)
+  Guard: map output to supported set {en, zh, ms, ta, ml, pa, hi}
+  → if in set: returns {lang, confident: true}
+  → if out-of-set or API failure: fall to Stage 4
+
+Stage 4 — GLM-5-Turbo LLM fallback (confident: false)
+  Prompt: "Detect the language of this text.
+           Respond with ONLY an ISO 639-1 code from: en, zh, ms, ta, ml, pa, hi.
+           Text: <input>"
+  → returns {lang, confident: false}
+  Callers receive confident: false and may act on the uncertainty
+\end{lstlisting}
+
+When \texttt{confident: false} on the user's \textbf{first message} in a session
+(non-English), the bot appends a soft parenthetical to the reply:
+\textit{``(Not sure about the language? Just reply in any language and I'll adapt.)''}
+This fires at most once per session.
+
+\subsection{Emotion Detection and Distress Scoring}
+
+\subsubsection{Text Emotion Model}
+
+\texttt{j-hartmann/emotion-english-distilroberta-base} classifies text into 7 categories.
+The raw output is a confidence score (0–1) for the predicted label — \textbf{not} a
+distress magnitude. Post-processing:
+
+\[
+\texttt{textBase} = \begin{cases} \texttt{text.score} & \text{if label} \in \{\text{anger, sadness, fear, disgust}\} \\ 0 & \text{otherwise} \end{cases}
+\]
+
+The non-distress guard prevents ``thank you!!'' (joy, 0.95) from scoring as a
+high-distress message, which would have triggered false escalation.
+
+\subsubsection{Audio Emotion Model (Dimensional)}
+
+The WAV2VEC2 model returns three continuous dimensions:
+\begin{itemize}[noitemsep]
+  \item \textbf{Valence} (0–1): pleasantness. Low valence = negative affect.
+  \item \textbf{Arousal} (0–1): energy/activation. High arousal = excited/loud.
+  \item \textbf{Dominance} (0–1): feeling of control (unused in scoring).
+\end{itemize}
+
+Audio boost formula:
+\[
+\texttt{audioBoost} = (1 - \texttt{valence}) \times \texttt{arousal} \times 0.3
+\]
+
+\subsubsection{Combined Distress Score}
+
+\[
+\texttt{emotion\_score} = \min\!\left((\texttt{textBase} + \texttt{audioBoost}) \times 100,\ 100\right)
+\]
+
+\[
+\texttt{label} = \begin{cases}
+  \text{rage} & \text{if score} > 80 \\
+  \text{angry} & \text{if score} > 65 \\
+  \text{frustrated} & \text{if score} > 50 \\
+  \text{sad} & \text{if score} > 35 \\
+  \text{neutral} & \text{otherwise}
+\end{cases}
+\]
+
+\subsubsection{Emotion Trajectory — Multi-Turn Smoothing}
+
+A single message emotion score is a noisy signal. \texttt{effectiveEmotion()}
+in \texttt{src/agents/main/emotionTrajectory.ts} computes a trajectory-smoothed
+effective score before tone selection:
+
+\[
+\text{recentAvg} = \frac{\sum_{i=1}^{N} w_i \cdot s_i}{\sum_{i=1}^{N} w_i}
+\quad \text{where } w_i = 0.6^{N-i} \text{ (recency-decaying)}
+\]
+
+\[
+\text{effectiveScore} = \max(\text{currentScore},\ \text{recentAvg})
+\]
+
+The \texttt{max} ensures the trajectory only \textbf{raises} soothing, never lowers it:
+a user who was angry and is now polite still receives warmer responses until the
+emotional history fully decays.
+
+\paragraph{Sustained flag.}
+\[
+\texttt{sustained} = \left|\{s_i : s_i > 65,\ i \in \text{last 3 turns}\}\right| \geq 2
+\]
+
+When \texttt{sustained = true}, the tone directive adds an
+``ongoing difficulty acknowledgement'' at the start of the reply
+(\textit{``I know this hasn't been easy — let's get it sorted''}).
+
+\subsection{Triage Classification}
+
+Before the query agent runs, every message is classified into one of three
+categories via regex pattern matching in \texttt{src/agents/triage/classifier.ts}:
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Category} & \textbf{Type} & \textbf{Action} \\
+\midrule
+\textbf{Cat 3} — Personal data   & User asks about their own account (balance, payout) & Answer requires officer; escalate \\
+\textbf{Cat 2} — Guided topic    & Broad question with a curated guiding set in MongoDB & Interactive Q\&A (guiding questions) \\
+\textbf{Cat 1} — Public knowledge & General CPF question answerable from knowledge base & Direct RAG + GLM answer \\
+\bottomrule
+\end{tabular}
+
+The classifier checks Cat 3 first (personal-data keywords), then Cat 2
+(partial-answer patterns), then defaults to Cat 1.
+
+\subsection{Retrieval-Augmented Generation (RAG)}
+
+\begin{lstlisting}[language=]
+Query text
+  │
+  ▼
+[1] MongoDB Atlas text index search
+    Collection: cpf_knowledge
+    Index: { content: "text", title: "text" }
+    Returns top-K documents (K = 5 default)
+  │
+  ▼
+[2] Context assembly
+    Relevant excerpts concatenated with source metadata
+  │
+  ▼
+[3] GLM-5-Turbo (Hermes, z.ai)
+    System prompt: BASE_SYSTEM_PROMPT
+      + toneDirective(effectiveEmotion)
+      + "Respond in: <lang>"
+      + retrieved context (< 4096 tokens)
+    User prompt: conversation history + current query
+  │
+  ▼
+[4] Response caching
+    Cache key: hash(query + intent + emotion.label + sustained)
+    TTL: 5 minutes
+    Hit: return cached response without GLM call
+\end{lstlisting}
+
+\subsection{Translation Pipeline}
+
+\texttt{translateText()} uses a two-stage fallback:
+
+\begin{enumerate}[noitemsep]
+  \item HuggingFace model (\texttt{HF\_TRANSLATE\_MODEL}, configurable): fast, free-tier
+  \item GLM-5-Turbo with \texttt{includeSoul: false, disableThinking: true}: utility call,
+        avoids the PULSE persona leaking into the translation output
+\end{enumerate}
+
+\begin{callout}
+\textbf{Critical rule — no double-translation:} The LLM generates replies directly
+in the user's detected language (the \texttt{"Respond in: <lang>"} directive). These
+native-language replies must \textbf{not} be run through \texttt{translateText()} — that
+would double-translate. Translation is used only for fixed UI strings and
+officer-to-citizen relay messages.
+\end{callout}
+
+\subsection{Background Noise Detection}
+
+For voice messages, a text-to-duration ratio heuristic identifies noisy environments:
+
+\[
+\text{noisy} = \left(\frac{|\text{text}|_{\text{chars}}}{\texttt{durationSec}} < 4\right) \land (\texttt{durationSec} \geq 2)
+\]
+
+A low characters-per-second ratio indicates Whisper produced sparse output on an
+audio clip of meaningful duration — a strong signal for background noise. The user
+receives a targeted ``move to a quieter area'' message rather than the generic
+``couldn't make out your voice'' message.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Escalation and Priority Scoring}
+\label{sec:escalation}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Escalation Analyzer}
+
+\texttt{analyzeEscalation()} in \texttt{src/agents/escalation/analyzer.ts} applies
+five ordered layers to decide whether to offer a CPF officer connection:
+
+\begin{lstlisting}[language=]
+Layer 1 (highest priority): Explicit request
+  Patterns: "speak to a human", "want an officer", "connect me", "escalate"
+  → escalate: explicit_request
+
+Layer 2: Personal data
+  Patterns: "my CPF balance", "how much do I have", "check my account"
+  → escalate: personal_data
+
+Layer 3: Life event
+  Patterns: death, disability, divorce, bankruptcy, emigration, estate
+  → escalate: life_event
+
+Layer 4: Complaint / dispute
+  Patterns: "wrong amount", "not credited", "employer didn't pay"
+  → escalate: complaint
+
+Layer 5: Bot failure
+  Condition: confidence < 0.4 AND reply contains hedge phrases
+  Hedge patterns: "I don't have specific information", "I'm not sure"
+  → escalate: bot_failure
+
+Override: emotion_score > 70 → auto-escalate regardless of layers
+\end{lstlisting}
+
+\subsection{Priority Scoring Formula}
+
+When a case enters the CCU queue (\texttt{ccu\_queue} MongoDB collection),
+a priority score is computed and updated post-escalation:
+
+\[
+P = \min\!\left(
+  \underbrace{\min(E_{\text{score}}, 95)}_{\text{emotion base}}
+  + \underbrace{\min(W \times 0.5,\ 20)}_{\text{wait boost}}
+  + \underbrace{15 \cdot \mathbf{1}[\text{financial}]}_{\text{financial flag}}
+  + \underbrace{10 \cdot \mathbf{1}[\text{sustained}]}_{\text{sustained flag}},
+\ 100\right)
+\]
+
+where:
+\begin{itemize}[noitemsep]
+  \item $E_{\text{score}}$ — emotion distress score (0–100) from \texttt{scoreEmotion}
+  \item $W$ — minutes waiting in queue since \texttt{created\_at}
+  \item $\text{financial}$ — \texttt{hasFinancialUrgency()} returned true (LIFE\_EVENTS or COMPLAINTS regex fired)
+  \item $\text{sustained}$ — \texttt{effectiveEmotion().sustained} is true ($\geq2$ of last 3 turns $>65$)
+\end{itemize}
+
+The priority score is refreshed every 30 seconds by the queue refresh timer,
+increasing the wait boost as time passes. The dashboard orders cases by descending
+priority score.
+
+\subsection{CCU Queue Schema (MongoDB \texttt{ccu\_queue})}
+
+\begin{lstlisting}[language=JavaScript]
+{
+  queueId:          string,  // UUIDv4
+  sessionId:        string,
+  userId:           string,  // "tg:<chatId>" | "wa:<phone>"
+  display_name:     string,  // Telegram real name or @username
+  preferred_lang:   string,  // ISO 639-1
+  emotion_score:    number,  // 0–100
+  emotion_label:    string,
+  summary:          string,  // auto-generated case summary
+  query_summary:    string,  // what the user is actually asking
+  chat_history:     [
+    { role: "user"|"agent"|"officer",
+      content: string,
+      ts: ISO8601,
+      emotion_score?: number,
+      emotion_label?: string,
+      translated?: string,    // officer message sent to user
+      translated_lang?: string }
+  ],
+  priority_score:   number,  // 0–100, recomputed every 30s
+  status:           "waiting" | "assigned" | "resolved",
+  assigned_officer: string | null,
+  assigned_at:      ISO8601 | null,
+  created_at:       ISO8601,
+  rating:           number | null  // 1–5 CSAT star rating
+}
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Messaging Channels}
+\label{sec:channels}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Telegram Bot API}
+
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Detail} \\
+\midrule
+Webhook endpoint   & \texttt{POST /webhook/telegram} \\
+Registration       & \texttt{setWebhook} with \texttt{allowed\_updates: ["message","edited\_message","callback\_query"]} \\
+\texttt{callback\_query} & Required for inline keyboard buttons (escalation offer, CSAT stars). Omitting this field silently breaks the escalation button. \\
+Voice messages     & Telegram sends OGG/Opus files. Backend downloads via \texttt{getFile} API. \\
+Inline keyboards   & Used for: escalation offer (``Connect to Officer''), CSAT rating (⭐–⭐⭐⭐⭐⭐), officer escalation confirm \\
+Rate limits        & \texttt{sendChatAction}: 1 per 5 seconds per chat. Thinking animation uses ~2s interval. \\
+\bottomrule
+\end{tabular}
+
+\subsection{WhatsApp Meta Cloud API}
+
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{Component} & \textbf{Detail} \\
+\midrule
+Webhook endpoint   & \texttt{POST /webhook/whatsapp} (JSON, not form-encoded) \\
+Hub challenge      & \texttt{GET /webhook/whatsapp} handles Meta's subscription verification (\texttt{hub.challenge} echo) \\
+Outbound messages  & Graph API \texttt{POST /{phone\_number\_id}/messages} with \texttt{appsecret\_proof} \\
+Signature          & \texttt{X-Hub-Signature-256: sha256=<hmac>} on every inbound webhook \\
+Message format     & \texttt{application/json} with \texttt{entry[].changes[].value.messages[]} \\
+Voice messages     & WhatsApp sends audio ID; backend fetches via \texttt{GET /{media\_id}} \\
+Environment variables & \texttt{WHATSAPP\_PHONE\_NUMBER\_ID}, \texttt{WHATSAPP\_ACCESS\_TOKEN}, \texttt{WHATSAPP\_APP\_SECRET}, \texttt{WHATSAPP\_VERIFY\_TOKEN} \\
+\bottomrule
+\end{tabular}
+
+\subsection{Channel Abstraction}
+
+Both channels are normalised to a common inbound event shape before hitting \texttt{processInbound()}:
+\begin{lstlisting}[language=JavaScript]
+{
+  userId:   "tg:493251079" | "wa:+6512345678",
+  channel:  "tg" | "wa",
+  text:     string | null,
+  voice:    Buffer | null,  // raw audio bytes
+  callbackData: string | null  // inline button payload
+}
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Officer Dashboard}
+\label{sec:dashboard}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Architecture}
+
+The officer dashboard is a Next.js 14 page served at \texttt{/dashboard}.
+It connects to the backend via both REST (initial load) and WebSocket (live updates).
+
+\begin{lstlisting}[language=]
+Browser (dashboard page)
+  │
+  ├── GET /dashboard/queue        ─▶ full queue + stats (initial load)
+  ├── GET /dashboard/queue/:id    ─▶ single case with chat history
+  ├── POST /dashboard/send/:id    ─▶ officer sends message to citizen
+  ├── POST /dashboard/translate   ─▶ on-demand translate citizen message → en
+  ├── PATCH /dashboard/resolve/:id ─▶ mark case resolved + trigger CSAT
+  └── WSS /dashboard/ws           ─▶ live push events
+
+WebSocket events (server → client):
+  { event: "queue_updated",  payload: { queueId, priority_score } }
+  { event: "officer_message", payload: { queueId, officerId, ... } }
+  { event: "case_resolved",   payload: { queueId } }
+  { event: "rating_received", payload: { queueId, rating } }
+  { event: "emotion_update",  payload: EmotionEvent }
+\end{lstlisting}
+
+\subsection{Real-Time WebSocket Protocol}
+
+WebSocket server is attached to the Express HTTP server instance via \texttt{ws} library
+at path \texttt{/dashboard/ws}. The broadcast function fans out to all connected officer
+clients:
+
+\begin{lstlisting}[language=JavaScript]
+broadcast(event: string, payload: unknown): void {
+  const msg = JSON.stringify({ event, payload, ts: Date.now() });
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
+  }
+}
+\end{lstlisting}
+
+\textbf{Client-side note:} The frontend reads the \texttt{event} field (not \texttt{type}).
+The WebSocket connects directly to the backend (\texttt{wss://pulse.nathanielbuilds.cc/dashboard/ws})
+bypassing any Next.js proxy that would drop long-lived connections.
+
+\subsection{Officer-to-Citizen Message Flow}
+
+\begin{enumerate}[noitemsep]
+  \item Officer types message (English) in dashboard
+  \item Backend \texttt{POST /dashboard/send/:queueId}:
+    \begin{enumerate}[noitemsep]
+      \item Fetches \texttt{preferred\_lang} from queue entry
+      \item If \texttt{preferred\_lang $\neq$ en}: calls \texttt{translateText(msg, "en", preferred\_lang)}
+      \item Sends translated text via Telegram or WhatsApp adapter
+      \item Persists \{role: "officer", content: originalEnglish, translated: translatedText\} to chat history
+      \item Broadcasts \texttt{officer\_message} WS event to all dashboard tabs
+    \end{enumerate}
+\end{enumerate}
+
+This provides a full audit trail: the English original (what the officer intended)
+and the translated output (what the citizen received) are both stored.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Session Lifecycle and CSAT}
+\label{sec:session}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Sessions are managed by \texttt{src/services/session/manager.ts}. Each session is
+an in-memory object keyed by \texttt{userId}.
+
+\begin{lstlisting}[language=]
+Session state:
+  conversationHistory: Message[]   (full turn-by-turn history)
+  sessionId:           string      (UUIDv4, ties to QueueEntry)
+  startedAt:           Date
+  lastActivityAt:      Date
+
+Termination conditions:
+  1. Citizen signs off ("thank you, bye")  → endSession(userId, "satisfied")
+  2. Citizen types /end                    → endSession(userId, "satisfied")
+  3. Officer resolves case                 → endSession(userId, "officer", {queueId})
+  4. 24h inactivity (sweep timer)          → silent reset, no CSAT
+
+On endSession:
+  1. Send CSAT prompt:
+     Telegram: inline keyboard ⭐⭐⭐⭐⭐ (callback: "rate:<sessionId>:<1-5>")
+     WhatsApp: "Please reply with a number 1–5 to rate this conversation"
+  2. Clear conversation history
+  3. Reset all pending state (guided Q, pending offer)
+\end{lstlisting}
+
+CSAT ratings are stored on the \texttt{QueueEntry} in MongoDB via \texttt{setQueueRating()}.
+The dashboard displays the rating once received, and broadcasts a \texttt{rating\_received}
+WebSocket event.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Ring 4 — Data Layer}
+\label{sec:data}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{SQLite — Citizens and Cases}
+
+SQLite (via the \texttt{better-sqlite3} driver) persists:
+\begin{itemize}[noitemsep]
+  \item \textbf{customers} — user profiles (userId, language preference, vulnerability tier)
+  \item \textbf{cases} — service interaction records
+  \item \textbf{cpf\_data} — simulated CPF account data (mock, keyed by hash of userId)
+\end{itemize}
+
+SQLite is local to the VPS. Resilience is achieved through pm2's automatic restart
+on crash (not a multi-node setup; single-server deployment).
+
+\subsection{MongoDB Atlas — Knowledge and Queue}
+
+Active cluster: \texttt{pulse.jvhsxu2.mongodb.net} (Atlas Free Tier, Singapore region).
+
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Collection} & \textbf{Owned By} & \textbf{Contents} \\
+\midrule
+\texttt{cpf\_knowledge}         & Hermes / RAG        & CPF scheme documents, FAQ chunks, source metadata \\
+\texttt{cpf\_guiding\_questions} & Inbound pipeline   & Curated topic-keyed Q\&A sets for guided flow \\
+\texttt{ccu\_queue}             & Escalation pipeline & Live officer queue entries (QueueEntry schema) \\
+\texttt{slang}                  & Language agent      & Singapore colloquialisms and glossary terms \\
+\bottomrule
+\end{tabular}
+
+\subsubsection{Guiding Questions — Topic Key Drift}
+
+The guiding questions collection has a known schema drift between environments:
+the committed seed file uses keys \texttt{retirement-income} / \texttt{growing-savings} /
+\texttt{home-ownership}, while the live Atlas cluster uses \texttt{retirement} / \texttt{topups} /
+\texttt{housing}. Each guiding set carries an \texttt{aliases} array so \texttt{findGuidingSetForQuery()}
+matches either vocabulary.
+
+\subsection{In-Memory State}
+
+The following state is in-memory only (lost on backend restart):
+\begin{itemize}[noitemsep]
+  \item \textbf{UserPrefs} — \texttt{pendingGuiding}, \texttt{pendingOfficerOffer}, \texttt{display\_name}
+  \item \textbf{Session history} — conversation turns, CSAT state
+  \item \textbf{Queue mirror} — \texttt{queueStore} Map (warmed from MongoDB on startup)
+  \item \textbf{Emotion ring buffer} — last 100 emotion events for dashboard
+  \item \textbf{Officer status} — connected officers and their availability
+  \item \textbf{Session timeout timers} — 24h inactivity sweep handles
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Frontend Architecture}
+\label{sec:frontend}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Technology}
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Component} & \textbf{Detail} \\
+\midrule
+Framework       & Next.js 14 (App Router) \\
+React version   & React 18 \\
+Language        & TypeScript (strict mode) \\
+Styling         & Inline \texttt{style=\{\{\}\}} objects + \texttt{globals.css} \\
+Fonts           & Fraunces (display/serif) + Bricolage Grotesque (body) via \texttt{next/font/google} \\
+Build           & \texttt{next build} → static + dynamic pages; served via \texttt{next start -p 3001} \\
+\bottomrule
+\end{tabular}
+
+\subsection{Page Structure}
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Route} & \textbf{Component} & \textbf{Description} \\
+\midrule
+\texttt{/}               & \texttt{page.tsx}        & Landing page — PULSE pitch, feature cards, nav \\
+\texttt{/chat}           & \texttt{chat/page.tsx}   & Citizen chat UI — connects to \texttt{POST /query} \\
+\texttt{/cpf}            & \texttt{cpf/page.tsx}    & CPF portal demo (account overview, scheme navigator) \\
+\texttt{/dashboard}      & \texttt{CpfDashboard.jsx} & Officer dashboard — live queue, WS, translate, resolve \\
+\texttt{/textus}         & \texttt{textus/page.tsx}  & ``Text Us'' demo (conversational entry) \\
+\texttt{/correspondence} & stub                     & Correspondence list (scaffold) \\
+\texttt{/login}          & stub                     & Singpass login (scaffold) \\
+\texttt{/proxy}          & stub                     & Caregiver/proxy portal (scaffold) \\
+\texttt{/settings}       & stub                     & User settings (scaffold) \\
+\bottomrule
+\end{tabular}
+
+\subsection{API Communication}
+
+All frontend API calls go directly to the backend using \texttt{NEXT\_PUBLIC\_BACKEND\_URL}
+(empty string in production = same origin via Caddy). The Next.js dev proxy was
+bypassed because it drops POST requests after 30 seconds — a known issue with
+Next.js 15's fetch proxy implementation. Production requests go same-origin and
+never trigger CORS preflight.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Deployment and CI/CD}
+\label{sec:deploy}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Process Management (pm2)}
+
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Name} & \textbf{Command} & \textbf{Port} & \textbf{Mode} & \textbf{Restart policy} \\
+\midrule
+\texttt{pulse-backend}  & \texttt{npx tsx src/gateway/index.ts} & 3000 & fork & On crash, no watch \\
+\texttt{pulse-frontend} & \texttt{npx next start -p 3001}       & 3001 & fork & On crash, no watch \\
+\bottomrule
+\end{tabular}
+
+Both processes run from \texttt{/nat/Project-PULSE}. pm2's persistent process list
+means they survive server reboots via \texttt{pm2 startup} + \texttt{pm2 save}.
+
+\subsection{GitHub Webhook Auto-Deploy}
+
+\begin{lstlisting}[language=]
+Push to origin/main
+  │
+  ▼
+GitHub sends POST to https://pulse.nathanielbuilds.cc/webhook/github
+  │
+  ▼
+deploy.ts: verify HMAC-SHA256 signature
+           check event == "push" and ref == "refs/heads/main"
+           respond 202 immediately
+           execFile("deploy/deploy-frontend.sh") async
+  │
+  ▼
+deploy-frontend.sh:
+  git fetch origin main
+  git checkout origin/main -- frontend/   (only frontend/ directory)
+  cd frontend && npm install --prefer-offline --no-audit --no-fund
+  npm run build                           (next build)
+  pm2 restart pulse-frontend
+\end{lstlisting}
+
+Only the \texttt{frontend/} directory is checked out from \texttt{main}, preserving any
+local backend state. The backend must be restarted manually after backend code changes
+(or will pick up changes on next crash-restart since tsx reads \texttt{.ts} files directly).
+
+\subsection{POST — Power-On Self-Test}
+
+The system has a mandatory self-test protocol (\texttt{npm run post}) that must exit 0
+before the backend is declared healthy. It verifies:
+\begin{itemize}[noitemsep]
+  \item Backend HTTP (\texttt{/query})
+  \item Frontend HTTP (\texttt{/})
+  \item Dashboard WebSocket (\texttt{/dashboard/ws})
+  \item Telegram \texttt{getMe} API reachability
+  \item Telegram webhook \texttt{allowed\_updates} includes \texttt{callback\_query}
+    (auto-repairs if missing — omitting this field silently breaks escalation buttons)
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{OpenClaw — AI Agent System}
+\label{sec:openclaw}
+% ─────────────────────────────────────────────────────────────────────────────
+
+OpenClaw is PULSE's custom multi-agent framework. In the live production system,
+the active pipeline runs through the \textbf{main agent} and \textbf{query agent}.
+The full domain/language/dialect hierarchy below is the designed target state;
+domain agent scaffolds exist in \texttt{src/agents/domain/}.
+
+\subsection{Agent Hierarchy (Designed)}
+
+\begin{lstlisting}[language=]
+Orchestrator (routes, never answers directly)
+    │
+    ├── Domain Agents (deep expertise per domain)
+    │   ├── Financial  (CPF, GST, IRAS, tax notices)
+    │   ├── Healthcare (Medisave, polyclinic, CHAS, MOH)
+    │   ├── Housing    (HDB, rental, conservancy, SERS)
+    │   ├── Employment (workpass, MOM, CPF employer)
+    │   └── Legal      (fines, court notices, LTA, NEA)
+    │
+    ├── Language Agents (glossary + contextualisation)
+    │   ├── English  (Plain English, Primary 4–6 level)
+    │   ├── Chinese  (简体中文 + local colloquialisms)
+    │   ├── Malay    (Bahasa Melayu, formal register)
+    │   └── Tamil    (தமிழ், formal register + local terms)
+    │
+    ├── Dialect Agents (12 dialects, first-class)
+    │   ├── Hokkien (福建话)    Cantonese (广东话)
+    │   ├── Teochew (潮州话)    Hakka (客家话)
+    │   ├── Hainanese (海南话)  Bazaar Melayu
+    │   ├── Javanese           Singapore Tamil
+    │   ├── Spoken Tamil       Malayalam
+    │   └── Punjabi            Hindi
+    │
+    ├── Accessibility Agent
+    │   (readability scoring, simplification, TTS, layout)
+    │
+    └── Guardian Agent
+        (scam detection, PII scrubbing, confidence gate)
+\end{lstlisting}
+
+\subsection{Agent Communication Protocol}
+
+\begin{lstlisting}[language=JavaScript]
+// AgentMessage — inter-agent envelope (src/agents/shared/types.ts)
+{
+  from:      string,        // sending agent name
+  to:        string,        // target agent name
+  type:      "request" | "response" | "escalate",
+  payload:   AgentPayload,
+  context:   RoutingContext,  // userId, sessionId, language, vuln tier, history
+  timestamp: ISO8601
+}
+
+// RoutingContext
+{
+  userId:          string,
+  sessionId:       string,
+  language:        Language,    // "en"|"zh"|"ms"|"ta"
+  dialect?:        Dialect,
+  vulnerabilityTier: VulnerabilityTier,
+  history:         AgentMessage[],
+  intent:          DetectedIntent
+}
+\end{lstlisting}
+
+\subsection{Dynamic Agent Registry}
+
+\texttt{AgentRegistry} (\texttt{src/agents/orchestrator/registry.ts}) maintains
+a runtime map of all registered agents. Each agent registers itself at startup
+with a capability declaration:
+
+\begin{lstlisting}[language=JavaScript]
+{
+  name:        string,
+  type:        "domain" | "language" | "dialect" | "accessibility" | "guardian",
+  domains:     string[],   // which domains this agent handles
+  languages:   string[],   // which language codes
+  dialects:    string[],   // which dialect codes
+  isHealthy(): boolean     // live health check
+}
+\end{lstlisting}
+
+Adding a new agent requires only: create the agent folder, define the
+registration, call \texttt{registry.register(agent)}. Zero existing code changes.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Language and Dialect Support}
+\label{sec:languages}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Official Languages}
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Code} & \textbf{Language} & \textbf{Register / Notes} \\
+\midrule
+\texttt{en} & English & Plain English, Primary 4–6 reading level \\
+\texttt{zh} & Mandarin (Simplified) & 简体中文 + local Singaporean colloquialisms \\
+\texttt{ms} & Malay & Bahasa Melayu, formal register \\
+\texttt{ta} & Tamil & தமிழ் + local terminology, formal register \\
+\bottomrule
+\end{tabular}
+
+\subsection{Dialect Coverage (12 dialects)}
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Code} & \textbf{Dialect} & \textbf{Community Context} \\
+\midrule
+\texttt{zh-hok} & Hokkien (福建话) & Largest senior dialect group; hawker centres, mature estates \\
+\texttt{zh-can} & Cantonese (广东话) & Older generation, HK media consumption \\
+\texttt{zh-teo} & Teochew (潮州话) & Concentrated in specific mature HDB estates \\
+\texttt{zh-hak} & Hakka (客家话) & Smaller but important for coverage \\
+\texttt{zh-hai} & Hainanese (海南话) & Smallest Chinese dialect group \\
+\texttt{ms-bms} & Bazaar Melayu & Cross-ethnic colloquial Malay; older generation \\
+\texttt{ms-jav} & Javanese & Javanese-descended older Singaporeans \\
+\texttt{ta-sin} & Singapore Tamil & Local variety with Malay/English loan words \\
+\texttt{ta-spo} & Spoken Tamil & Colloquial; more accessible for non-literate users \\
+\texttt{ml}     & Malayalam & Keralite community \\
+\texttt{pa}     & Punjabi & Sikh community \\
+\texttt{hi}     & Hindi & Broader Indian community, newer arrivals \\
+\bottomrule
+\end{tabular}
+
+\begin{callout}
+\textbf{Why dialects matter:} Many Singaporeans aged 75+ are more comfortable in dialect
+than in Mandarin or formal Tamil. The 1979 Speak Mandarin Campaign shifted education away
+from dialects, but the current elderly population was already out of school at that time.
+For these users, a message in Hokkien or Bazaar Melayu is not a ``translation'' — it is
+the \textit{primary language of comprehension}. PULSE treats dialects as first-class
+language agents, not localisation afterthoughts.
+\end{callout}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Service Catalogue (9 Backend Services)}
+\label{sec:services}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Each service is a self-contained Express Router module following the same internal
+structure: \texttt{routes.ts → controller.ts → service.ts → repository.ts}. Dependencies
+point inward only; no service imports from another service's internals.
+
+\begin{longtable}{@{}lp{4cm}p{6cm}@{}}
+\toprule
+\textbf{Service} & \textbf{Owns} & \textbf{Key Responsibilities} \\
+\midrule
+\endhead
+\textbf{Correspondence} & Letters, templates, metadata & Full CRUD with Zod validation; template pattern for all services \\
+\textbf{Vulnerability}  & User classification, support tiers & Tier assignment (self-service/guided/high-touch) based on behaviour signals \\
+\textbf{Orchestration}  & Channel routing decisions & Determine optimal channel/timing given vulnerability assessment \\
+\textbf{Adaptation}     & Language simplification    & Simplify content to target reading level; Flesch-Kincaid scoring \\
+\textbf{Delivery}       & Multi-channel dispatch     & SingPost (physical mail), SMS, in-app push, email, voice callbacks \\
+\textbf{Notification}   & SMS, push, email reminders & Reminder cadence; 48h digital non-open → SMS follow-up \\
+\textbf{Proxy}          & Delegated access           & Caregiver/coordinator relationships; audit trail per action \\
+\textbf{Analytics}      & Engagement metrics         & Open rates, drop-off, time-to-completion; feeds vulnerability detector \\
+\textbf{Billing}        & Usage metering             & Per-tenant correspondence/voice/mail counts; invoice generation \\
+\bottomrule
+\end{longtable}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Cross-Cutting Concerns}
+\label{sec:crosscutting}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Structured Logging}
+
+All logging uses Pino (\texttt{src/shared/logger.ts}) with structured JSON output:
+\begin{lstlisting}[language=JavaScript]
+{
+  "level": "info",
+  "time":  1783762360249,     // Unix ms
+  "pid":   2039952,
+  "hostname": "localhost",
+  "service":  "inbound",      // child logger label
+  "userId":   "tg:493251079",
+  "msg":      "Inbound message"
+  // NEVER: PII, tokens, passwords, full text of user messages
+}
+\end{lstlisting}
+
+Log levels: \texttt{trace} (verbose dev), \texttt{debug}, \texttt{info},
+\texttt{warn} (recoverable), \texttt{error} (needs investigation), \texttt{fatal} (crash).
+
+\subsection{Error Hierarchy}
+
+\texttt{src/shared/errors.ts} defines a typed error hierarchy:
+\begin{lstlisting}[language=]
+AppError (base)
+  ├── NotFoundError      (404)
+  ├── UnauthorizedError  (401)
+  ├── ForbiddenError     (403)
+  ├── ValidationError    (422) — carries Zod issues array
+  ├── RateLimitError     (429) — carries retryAfter seconds
+  └── ExternalServiceError (502)
+        code: "EXTERNAL.<SERVICE>_ERROR"
+        isRetryable: boolean
+        metadata: any
+\end{lstlisting}
+
+The global error handler serialises these to structured JSON. Unhandled errors
+return a generic \texttt{500} without leaking stack traces to the client.
+
+\subsection{Message Formatting}
+
+Bot answers follow a government content standard (GOV.UK content design + Singapore SGDS):
+\begin{itemize}[noitemsep]
+  \item Front-loaded answers: the direct answer comes first
+  \item $\leq$25-word sentences
+  \item Scannable bullets (capped at 6 per response)
+  \item Plain words; one leading emoji (💰 / 🏠 / 🏥 / 📅 / ℹ️)
+  \item Always ends with \texttt{cpf.gov.sg} link
+\end{itemize}
+
+\texttt{src/shared/formatter.ts} applies deterministic, language-agnostic cleanup:
+bullet capping, character-based length cap ($\sim$900 chars, applied before markdown
+escaping), CJK-aware sentence boundary detection (\texttt{。！？} in addition to
+\texttt{.!?}). Word-count caps are \textbf{never} used — they break on Chinese
+(no spaces between characters).
+
+\subsection{Accessibility Standards}
+
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{Standard} & \textbf{Implementation} \\
+\midrule
+WCAG 2.2 AA       & All UI components. Minimum 4.5:1 contrast ratio enforced. \\
+Plain language     & Primary 6 reading level for guided tier; Primary 4 for high-touch \\
+Screen readers     & Semantic HTML, \texttt{aria-label} on all interactive elements \\
+Responsive layout  & Tested on large-screen phones (common among seniors) and tablets \\
+No links in SMS    & Users type known gov.sg URLs manually (scam prevention) \\
+\bottomrule
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Vulnerability Detection and Support Tiers}
+\label{sec:vulnerability}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The system classifies each user into one of three support tiers, dynamically
+adjusting the interaction based on detected signals:
+
+\begin{longtable}{@{}lp{5cm}p{5cm}@{}}
+\toprule
+\textbf{Tier} & \textbf{Trigger Signals} & \textbf{System Behaviour} \\
+\midrule
+\endhead
+\textbf{Self-service}  & Confident digital user; no difficulty signals & Standard UI; full feature access; minimal prompts \\
+\textbf{Guided}        & Some difficulty: slow response, repeated corrections, simplified language requested & Simplified language; proactive prompts; step-by-step guidance; larger text hints \\
+\textbf{High-touch}    & Repeated failures; age $\geq75$; declared disability; non-digital escalation & Voice assist; human fallback offered proactively; minimal steps; community coordinator alert \\
+\bottomrule
+\end{longtable}
+
+\textbf{Proactive intervention thresholds:}
+\begin{itemize}[noitemsep]
+  \item Digital notification unopened after 48h → SMS follow-up with simplified summary
+  \item No action taken after 5 days → automated voice-guided callback
+  \item Repeated failed interactions detected → flag for community coordinator outreach
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Security Threat Model}
+\label{sec:threats}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{longtable}{@{}lp{4cm}p{7cm}@{}}
+\toprule
+\textbf{Threat} & \textbf{Attack Vector} & \textbf{Mitigation} \\
+\midrule
+\endhead
+Webhook spoofing     & Fake Telegram/Meta/GitHub POST & HMAC-SHA256 verification; \texttt{timingSafeEqual} prevents timing oracle \\
+Token theft          & JWT in localStorage, XSS steal & httpOnly cookies only; CSP blocks inline scripts \\
+Session hijacking    & Cookie theft & Secure; SameSite=Strict; short TTL (15 min access) \\
+Replay attack        & Resend old JWT & JTI revocation list in Redis; refresh token rotation \\
+SQL injection        & Malicious query input & Parameterised queries via SQLite driver; Zod input validation \\
+NoSQL injection      & Malicious MongoDB query & Typed object construction; no \texttt{\$where} queries; Zod sanitisation \\
+XSS                  & Script injection in chat & CSP header; no \texttt{dangerouslySetInnerHTML}; markdown escaping in formatter \\
+Clickjacking         & iframe embedding & \texttt{X-Frame-Options: DENY} \\
+DDoS                 & Traffic flood & Rate limiting per IP/user; Caddy connection limits \\
+Scam impersonation   & Fake gov messages to users & No links in SMS/email; verifiable reference codes; scam education in flow \\
+PII leakage via logs & Log PII by accident & Pino child loggers never log message content; userId only (hashed/opaque) \\
+MITM                 & HTTP traffic interception & TLS enforced; HSTS \texttt{max-age=31536000}; HTTP 301 redirect to HTTPS \\
+Credential exposure  & Hardcoded secrets & All secrets in \texttt{.env} (gitignored); \texttt{.env.example} commits only \\
+\bottomrule
+\end{longtable}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Aspirational Infrastructure (Not Yet Provisioned)}
+\label{sec:aspirational}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The following components are documented in the architecture and scaffolded in code
+but have not been provisioned in the current single-VPS deployment:
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Component} & \textbf{Planned Role} & \textbf{Status} \\
+\midrule
+Apache Kafka       & Async inter-service event bus & Deps removed (kafkajs was unused) \\
+Redis              & Rate limit storage, JWT revocation, response cache & In-memory shim used instead \\
+PostgreSQL         & Schema-per-service persistence & SQLite used instead \\
+AWS/Azure Gov Cloud & Multi-AZ production hosting & Single VPS (pulse.nathanielbuilds.cc) \\
+Docker + Kubernetes & Container orchestration & pm2 used instead \\
+CloudFront / Cloudflare CDN & Edge caching, WAF, DDoS shield & Caddy on VPS \\
+Singpass IdP integration & Citizen authentication & JWT dev-mode stub \\
+SingPost API        & Physical mail dispatch & Adapter scaffold in place \\
+OpenTelemetry/Grafana & Distributed tracing, metrics & Pino structured logs only \\
+LaunchDarkly/Unleash & Feature flags & Direct code deployment \\
+\bottomrule
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Environment Variables Reference}
+\label{sec:env}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{longtable}{@{}lp{5cm}l@{}}
+\toprule
+\textbf{Variable} & \textbf{Purpose} & \textbf{Required} \\
+\midrule
+\endhead
+\texttt{TELEGRAM\_BOT\_TOKEN}       & Telegram Bot API authentication & Yes \\
+\texttt{TELEGRAM\_WEBHOOK\_SECRET}  & Telegram webhook token verification & Recommended \\
+\texttt{WHATSAPP\_PHONE\_NUMBER\_ID} & Meta Cloud API phone number ID & Yes (WA) \\
+\texttt{WHATSAPP\_ACCESS\_TOKEN}    & Meta Cloud API bearer token & Yes (WA) \\
+\texttt{WHATSAPP\_APP\_SECRET}      & HMAC-SHA256 webhook signing key & Yes (WA) \\
+\texttt{WHATSAPP\_VERIFY\_TOKEN}    & Meta hub-challenge verification & Yes (WA) \\
+\texttt{GITHUB\_WEBHOOK\_SECRET}    & GitHub auto-deploy HMAC key & Yes (auto-deploy) \\
+\texttt{MONGODB\_URI}               & Atlas cluster connection string & Yes \\
+\texttt{HF\_API\_KEY}               & HuggingFace Inference API key & Yes \\
+\texttt{HF\_TRANSLATE\_MODEL}       & Translation model endpoint & Optional (GLM fallback) \\
+\texttt{GLM\_API\_KEY}              & z.ai GLM-5-Turbo API key & Yes \\
+\texttt{GLM\_BASE\_URL}             & z.ai API base URL & Yes \\
+\texttt{JWT\_SECRET}                & JWT signing secret & Yes \\
+\texttt{NEXT\_PUBLIC\_BACKEND\_URL} & Frontend API base (empty = same-origin) & Frontend \\
+\texttt{NODE\_ENV}                  & \texttt{production} / \texttt{development} & Yes \\
+\bottomrule
+\end{longtable}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Key Data Flows — End-to-End Sequence}
+\label{sec:flows}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Happy Path: Citizen Asks a CPF Question via Telegram}
+
+\begin{lstlisting}[language=]
+Citizen (Telegram)       Backend                     External APIs
+      │                     │                              │
+      │── "How much CPF ──▶ │                              │
+      │    can I withdraw?" │                              │
+      │                     │── sendChatAction(typing) ──▶ Telegram
+      │                     │                              │
+      │                     ├── detectEmotion() ──────────▶ HF (distilroberta)
+      │                     ├── detectLanguage() ─────────▶ HF (xlm-roberta) or GLM
+      │                     │                              │
+      │                     │── classifyQuery() ──▶ Cat 1 (public_knowledge)
+      │                     │                              │
+      │                     │── searchKnowledge() ─────── MongoDB Atlas (cpf_knowledge)
+      │                     │                              │
+      │                     │── chatComplete() ───────────▶ GLM-5-Turbo (z.ai)
+      │                     │                              │
+      │                     │── formatReply() ──▶ (local, no API)
+      │                     │                              │
+      │                     │── analyzeEscalation() ──▶ (local regex)
+      │                     │                              │
+      │◀── "CPF members can ──│── sendMessage() ───────────▶ Telegram Bot API
+      │    withdraw..." msg   │                              │
+      │                     │── broadcast(emotion_update) ▶ WS (officer dashboard)
+\end{lstlisting}
+
+\subsection{Escalation Path: Citizen Escalated to Officer}
+
+\begin{lstlisting}[language=]
+Citizen (Telegram)     Backend               Officer (Dashboard)   MongoDB Atlas
+      │                   │                          │                  │
+      │─ "I want to speak  ─▶│                          │                  │
+      │   to a real person" │                          │                  │
+      │                   │── analyzeEscalation() → explicit_request     │
+      │                   │── postToQueue() ──────────────────────────── ccu_queue
+      │◀─ inline keyboard ──│                          │                  │
+      │   [Connect to Officer]                         │                  │
+      │── (tap button) ──▶│── callback_query            │                  │
+      │                   │── doEscalate()             │                  │
+      │                   │── hasFinancialUrgency() ──▶ (local regex)     │
+      │                   │── computePriorityScore() ─▶ (local formula)   │
+      │                   │── updateQueuePriority() ───────────────────── ccu_queue
+      │                   │── broadcast(queue_updated) ──▶ WS           │
+      │◀─ "Connecting you  │                          │                  │
+      │   to an officer..." │                          │                  │
+      │                   │          [officer opens dashboard]            │
+      │                   │◀─ GET /dashboard/queue ──── officer fetches  │
+      │                   │                          │                  │
+      │                   │         [officer types reply]                 │
+      │                   │◀─ POST /dashboard/send ──────────────────────│
+      │                   │── translateText("en"→"ms")──▶ GLM/HF        │
+      │◀─ (translated msg)─│── sendMessage() ──────────▶ Telegram        │
+      │                   │── broadcast(officer_message)──▶ WS           │
+      │                   │── appendToQueueHistory()─────────────────── ccu_queue
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Testing and Self-Verification}
+\label{sec:testing}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Test Type} & \textbf{Command} & \textbf{Scope} \\
+\midrule
+Unit tests           & \texttt{npm test}      & 107 tests — emotion scoring, trajectory, formatter, flow predicates \\
+POST self-test       & \texttt{npm run post}  & Live system health: HTTP, WS, Telegram API, webhook config \\
+TypeScript typecheck & \texttt{npx tsc --noEmit} & Zero errors enforced before push \\
+Frontend build       & \texttt{npm run build} (frontend/) & All 12 pages prerender without errors \\
+\bottomrule
+\end{tabular}
+
+Key test files:
+\begin{itemize}[noitemsep]
+  \item \texttt{src/agents/main/emotionTrajectory.test.ts} — rising/falling/spike/cold-start/sustained cases
+  \item \texttt{src/agents/main/emotion.test.ts} — distress label boundary conditions
+  \item \texttt{src/agents/triage/classifier.test.ts} — Cat 1/2/3 classification
+  \item \texttt{src/gateway/inbound.flow.test.ts} — 12-case characterisation harness
+  \item \texttt{src/shared/formatter.test.ts} — CJK boundary, bullet cap, URL preservation
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Project Roadmap}
+\label{sec:roadmap}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{longtable}{@{}lp{8cm}l@{}}
+\toprule
+\textbf{Item} & \textbf{Description} & \textbf{Priority} \\
+\midrule
+\endhead
+History persistence (B9) & Conversation history lost on backend restart; move to MongoDB & High \\
+Singpass integration & Full OAuth2 flow with NRIC verification & High \\
+Domain agents (5) & Implement Financial, Housing, Healthcare, Employment, Legal agents with curated knowledge bases & High \\
+Dialect agents (12) & Full dialect response generation + glossary lookup & Medium \\
+PostgreSQL provisioning & Replace SQLite with schema-per-service PostgreSQL & Medium \\
+Redis caching & Replace in-memory rate limiter and response cache with Redis & Medium \\
+Physical mail (SingPost) & Complete delivery adapter for postal dispatch & Medium \\
+Voice IVR & Twilio/AWS Connect integration for phone channel & Medium \\
+Kafka event bus & Async inter-service communication via topics & Low \\
+Kubernetes + Docker & Container orchestration for horizontal scaling & Low \\
+\bottomrule
+\end{longtable}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\appendix
+\section{Glossary}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{tabular}{@{}lp{11cm}@{}}
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+OpenClaw  & PULSE's custom multi-agent AI framework (name is internal) \\
+Hermes    & The LLM component — GLM-5-Turbo on z.ai, used for RAG generation + translation fallback \\
+CCU       & Contact Centre Unit — the officer team that handles escalated cases \\
+RAG       & Retrieval-Augmented Generation — combining document retrieval with LLM generation \\
+HF        & HuggingFace — ML model inference provider \\
+CSAT      & Customer Satisfaction Score — 1–5 star rating collected at session end \\
+triage    & Three-category query classifier (Cat 1 public / Cat 2 guided / Cat 3 personal) \\
+tsx       & TypeScript execute — runs \texttt{.ts} files directly without a compile step \\
+pm2       & Node.js process manager — keeps processes alive, logs, restarts on crash \\
+Caddy     & Reverse proxy + automatic TLS; routes \texttt{/api/*} → :3000, frontend → :3001 \\
+GLM       & General Language Model — z.ai's GLM-5-Turbo API (Hermes uses this) \\
+JTI       & JWT ID — unique token identifier used for revocation \\
+HMAC      & Hash-based Message Authentication Code — used for webhook signature verification \\
+OGG/Opus  & Audio codec used by Telegram voice messages \\
+\bottomrule
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\vfill
+\begin{center}
+\small\textcolor{gray}{
+  PULSE Framework — System Architecture Document \\
+  Version 3.0 — July 2026 \\
+  \texttt{OriginalNneo/Project-PULSE} — branch \texttt{main} \\[4pt]
+  This document reflects the live production system as of the date above. \\
+  The aspirational infrastructure described in Section~\ref{sec:aspirational} \\
+  represents planned but not yet provisioned components.
+}
+\end{center}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\end{document}
