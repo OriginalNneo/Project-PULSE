@@ -1,7 +1,7 @@
 import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
-import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, appendToQueueHistory, setQueueQuerySummary, type UserPrefs } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, updateQueuePriority, appendToQueueHistory, setQueueQuerySummary, type UserPrefs } from "../db/proxy-client.js";
 import { callHermes } from "../services/ai/llmClient.js";
 import { findGuidingSetForQuery } from "../data/knowledge/guiding.js";
 import { synthesizeGuidedAnswer } from "../agents/query/guidedSynthesis.js";
@@ -22,7 +22,8 @@ import {
 } from "../services/session/manager.js";
 import { notifyNewQueueEntry, notifyQueueUpdated } from "../dashboard/notify.js";
 import { formatReply, containsHtml } from "../shared/formatter.js";
-import { analyzeEscalation } from "../agents/escalation/analyzer.js";
+import { analyzeEscalation, hasFinancialUrgency } from "../agents/escalation/analyzer.js";
+import { computePriorityScore } from "../dashboard/queue.js";
 import { classifyQuery } from "../agents/triage/classifier.js";
 import { broadcast } from "./ws.js";
 import { pushEmotionEvent, getLatestEmotionForUser } from "./dashboard.js";
@@ -151,17 +152,20 @@ async function transcriptionLooksUnclear(text: string): Promise<boolean> {
   }
 }
 
-// Failure scenario reply: couldn't make out the voice note. Replies in the user's
+// Failure scenario reply: couldn’t make out the voice note. Replies in the user’s
 // language, with the "Connect to CPF Officer" button, and a spoken (TTS) version.
 async function sendUnclearVoiceReply(
   channel: InboundChannel,
   userId: string,
   lang: string,
   prefs: { speech_rate?: number; preferred_dialect?: string },
+  noisy = false,
 ): Promise<void> {
   // Remember the last voice note was unclear so an escalation right after has context.
   await upsertUserPrefs({ userId, pendingVoiceUnclear: true }).catch(() => null);
-  let msg = "🎤 Sorry, I couldn’t make out your voice message clearly — it sounded muffled or unclear. Please try recording again in a quiet place and speak slowly, or tap the button below to connect to a CPF officer who can help.";
+  let msg = noisy
+    ? "It sounds like there’s a lot of background noise where you are — could you move somewhere quieter, or just type your message instead?"
+    : "I had trouble making out your voice message — please try recording again or type your question instead.";
   if (lang !== "en") {
     const t = await translateText(msg, "en", lang).catch(() => null);
     if (t) msg = t.translated_text;
@@ -696,10 +700,14 @@ async function deliverAnswer(ctx: {
   voiceInput: boolean;
   thinking: Awaited<ReturnType<typeof startThinking>>;
   emotionPromise: Promise<ScoredEmotion>;
+  showLangHint?: boolean;
 }): Promise<void> {
-  const { channel, userId, prefs, lang, messageText, triage, queryResult, voiceInput, thinking, emotionPromise } = ctx;
+  const { channel, userId, prefs, lang, messageText, triage, queryResult, voiceInput, thinking, emotionPromise, showLangHint } = ctx;
 
   let reply = queryResult.content || "I wasn't able to find an answer for that. Would you like me to connect you to a CPF officer?";
+  if (showLangHint) {
+    reply += "\n\n_(Not sure about the language? Just reply in any language and I'll adapt.)_";
+  }
 
   // No translation here — the query agent already generates in the user's language
   // (native generation). Translating again would double-translate the native reply.
@@ -813,7 +821,8 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     const shortAudio = msg.durationSec != null && msg.durationSec < 1.2;
     if (!messageText || messageText.length < 5 || shortAudio || (await transcriptionLooksUnclear(messageText))) {
       log.info({ userId, messageText, durationSec: msg.durationSec }, "Voice message judged unclear — sending error + officer option");
-      await sendUnclearVoiceReply(channel, userId, lang, prefs);
+      const noisy = msg.durationSec != null && msg.durationSec >= 2 && messageText.length / msg.durationSec < 4;
+      await sendUnclearVoiceReply(channel, userId, lang, prefs, noisy);
       return;
     }
   }
@@ -875,6 +884,7 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   const thinking = await startThinking(channel);
   let queryResult;
   let triage = classifyQuery(messageText); // preliminary pass; refined after normalisation below
+  let langConfident = true; // updated inside the try block; true = HF succeeded, false = LLM fallback
   try {
     let queryText = messageText;
     if (!voiceInput) {
@@ -892,7 +902,7 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
 
     // Language detection runs in parallel with emotionPromise (both are async API calls).
     // Previously detectLanguage was awaited sequentially, adding ~1–2s before the LLM.
-    const detectLangPromise: Promise<string | null> = queryText.length >= 8
+    const detectLangPromise: Promise<{ lang: string; confident: boolean } | null> = queryText.length >= 8
       ? detectLanguage(queryText).catch(() => null)
       : Promise.resolve(null);
 
@@ -908,7 +918,8 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     if (triage.category === 2 && !isExplicitOfficerRequest(queryText)) {
       const guiding = await findGuidingSetForQuery(queryText).catch(() => null);
       if (guiding) {
-        const [detectedLang, scored] = await Promise.all([detectLangPromise, emotionPromise]);
+        const [detectedResult, scored] = await Promise.all([detectLangPromise, emotionPromise]);
+        const detectedLang = detectedResult?.lang ?? null;
         if (detectedLang && SUPPORTED_LANGS.has(detectedLang as Lang) && detectedLang !== lang) {
           lang = detectedLang as Lang;
           prefs = { ...prefs, preferred_lang: lang };
@@ -947,9 +958,11 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
 
     // Resolve language + emotion together — both have been running since early in
     // the handler; awaiting here adds near-zero latency for either.
-    const [detected, turnEmotion] = await Promise.all([detectLangPromise, emotionPromise]);
-    if (detected && SUPPORTED_LANGS.has(detected as Lang) && detected !== lang) {
-      lang = detected as Lang;
+    const [detectedResult, turnEmotion] = await Promise.all([detectLangPromise, emotionPromise]);
+    const detectedLang = detectedResult?.lang ?? null;
+    langConfident = detectedResult?.confident ?? true;
+    if (detectedLang && SUPPORTED_LANGS.has(detectedLang as Lang) && detectedLang !== lang) {
+      lang = detectedLang as Lang;
       prefs = { ...prefs, preferred_lang: lang };
       await upsertUserPrefs(prefs).catch(() => null);
       log.info({ userId, detectedLang: lang }, "Language auto-detected — switching response language");
@@ -986,9 +999,13 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     return;
   }
 
+  // Soft language hint on the first turn when detection fell back to the LLM (lower
+  // confidence). Appended as a parenthetical so the user knows they can switch languages.
+  const showLangHint = !langConfident && getHistory(userId).length === 0 && lang !== "en";
+
   // ── Deliver: build reply, append history, escalation analysis, send + TTS ────
   await deliverAnswer({
-    channel, userId, prefs, lang, messageText, triage, queryResult, voiceInput, thinking, emotionPromise,
+    channel, userId, prefs, lang, messageText, triage, queryResult, voiceInput, thinking, emotionPromise, showLangHint,
   });
 }
 
@@ -1182,8 +1199,30 @@ async function doEscalate(
   }).catch((e: unknown) => { log.error({ userId, err: String(e) }, "postToQueue failed"); return null; });
 
   if (entry) {
-    notifyNewQueueEntry(entry.queueId, entry.emotion_label, entry.priority_score);
-    log.info({ queueId: entry.queueId, userId, querySummary: provisionalSummary }, "User escalated to CCU queue");
+    // Enrich the initial priority score with financial urgency + sustained emotion signals.
+    // Both are derived from data already in memory — no extra API calls.
+    const allUserText = [
+      ...(chatHistory ?? []).filter((m) => m.role === "user").map((m) => m.content),
+      userMessage,
+    ].join(" ");
+    const financialFlag = hasFinancialUrgency(allUserText);
+    const priorScores = (chatHistory ?? [])
+      .filter((m) => m.role === "user" && typeof m.emotion_score === "number")
+      .map((m) => m.emotion_score as number);
+    const eff = effectiveEmotion(
+      { emotion_score: emotion?.emotion_score ?? 0, emotion_label: emotion?.emotion_label ?? "neutral" },
+      priorScores,
+    );
+    const enrichedScore = computePriorityScore(emotion?.emotion_score ?? 50, 0, {
+      financialFlag,
+      sustained: eff.sustained,
+    });
+    if (enrichedScore !== entry.priority_score) {
+      await updateQueuePriority(entry.queueId, enrichedScore).catch(() => null);
+    }
+
+    notifyNewQueueEntry(entry.queueId, entry.emotion_label, enrichedScore);
+    log.info({ queueId: entry.queueId, userId, querySummary: provisionalSummary, financialFlag, sustained: eff.sustained, priorityScore: enrichedScore }, "User escalated to CCU queue");
 
     // Background summary upgrade — only when there's a real conversation to summarise and no
     // preset. Generous 25s budget (vs the old blocking 8s) since nothing waits on it; on success
@@ -1195,7 +1234,7 @@ async function doEscalate(
         const ai = (await summariseQueryForOfficer(chatHistory, provisionalSummary, 25000)).trim();
         if (ai && ai !== provisionalSummary) {
           await setQueueQuerySummary(entry.queueId, ai);
-          notifyQueueUpdated(entry.queueId, entry.priority_score);
+          notifyQueueUpdated(entry.queueId, enrichedScore);
           log.info({ queueId: entry.queueId, querySummary: ai }, "Officer summary upgraded (background)");
         }
       })().catch((err: unknown) => log.warn({ err: String(err), queueId: entry.queueId }, "background summary upgrade failed"));

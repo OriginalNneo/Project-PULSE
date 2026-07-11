@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import BackHomeButton from "@/components/BackHomeButton";
 
 type Role = "user" | "agent";
 interface Message {
@@ -139,6 +140,7 @@ export default function ChatPage() {
 
   return (
     <div>
+      <BackHomeButton />
       <h1>Ask PULSE</h1>
       <p>Ask a question about your government correspondence in any language or dialect.</p>
 

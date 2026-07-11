@@ -11,11 +11,19 @@ import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("dashboard-queue");
 
-// emotion_score is capped at 80; wait_time_boost is capped at 20 → max 100
-export function computePriorityScore(emotionScore: number, minutesWaiting: number): number {
-  const emotionCapped = Math.min(emotionScore, 80);
+// emotion_score capped at 95; wait_time_boost capped at 20 → max 100.
+// financialFlag (+15): life-event or complaint/dispute in the message.
+// sustained (+10):     anger/frustration across ≥2 of the last 3 turns.
+export function computePriorityScore(
+  emotionScore: number,
+  minutesWaiting: number,
+  opts: { financialFlag?: boolean; sustained?: boolean } = {},
+): number {
+  const emotionBase = Math.min(emotionScore, 95);
   const waitBoost = Math.min(minutesWaiting * 0.5, 20);
-  return Math.round(emotionCapped + waitBoost);
+  const financialBoost = opts.financialFlag ? 15 : 0;
+  const sustainedBoost = opts.sustained ? 10 : 0;
+  return Math.round(Math.min(emotionBase + waitBoost + financialBoost + sustainedBoost, 100));
 }
 
 // Re-score all "waiting" entries based on current wait time, then write back

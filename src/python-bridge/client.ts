@@ -194,11 +194,35 @@ function scriptLanguage(text: string): string | null {
   return null;
 }
 
-export async function detectLanguage(text: string): Promise<string> {
+// Malay keyword tokens that xlm-roberta reliably mislabels. Matching ≥2 as whole
+// words is a strong Malay signal that we can treat as certain without calling HF.
+const MALAY_KEYWORDS = [
+  "saya", "awak", "boleh", "nak", "lah", "mah", "tidak", "ada",
+  "ini", "itu", "dan", "dengan", "untuk", "dari", "ke", "di",
+];
+
+export async function detectLanguage(text: string): Promise<{ lang: string; confident: boolean }> {
   // 1) Script is deterministic for the non-Latin supported languages.
   const byScript = scriptLanguage(text);
-  if (byScript) return byScript;
-  // 2) Latin script (en vs ms): HF detector, then LLM fallback when HF returns a code we
+  if (byScript) return { lang: byScript, confident: true };
+
+  // 2) Malay keyword heuristics — runs before HF to catch common mislabellings.
+  const lower = text.toLowerCase();
+  let malayHits = 0;
+  for (const kw of MALAY_KEYWORDS) {
+    if (new RegExp(`\\b${kw}\\b`).test(lower)) {
+      malayHits++;
+      if (malayHits >= 2) return { lang: "ms", confident: true };
+    }
+  }
+
+  // 3) Short-text guard — HF is unreliable on very short strings, skip straight to LLM.
+  if (text.trim().length < 8) {
+    const result = await llmDetectLanguage(text);
+    return { lang: result, confident: false };
+  }
+
+  // 4) Latin script (en vs ms): HF detector, then LLM fallback when HF returns a code we
   //    don't support (it mislabels Malay, e.g. → "ru").
   log.info({ model: DETECT_MODEL }, "Detecting language via HF");
   try {
@@ -206,14 +230,14 @@ export async function detectLanguage(text: string): Promise<string> {
     // text-classification returns [[{label, score}, ...]] sorted by score desc.
     const top = Array.isArray(out) && Array.isArray(out[0]) ? out[0][0] : undefined;
     const label = (top?.label ?? "").split(/[-_]/)[0] ?? "";
-    if (APP_LANGS.has(label)) return label;
+    if (APP_LANGS.has(label)) return { lang: label, confident: true };
     // HF returned a code we don't support (it can't tell ms/ta/ml/pa apart) → ask the LLM,
     // constrained to the supported set, which classifies these reliably.
     log.info({ hfLabel: label }, "HF language detect out-of-set — falling back to LLM");
-    return await llmDetectLanguage(text);
+    return { lang: await llmDetectLanguage(text), confident: false };
   } catch (err) {
     log.warn({ err: (err as Error).message }, "HF language detect failed — falling back to LLM");
-    return await llmDetectLanguage(text);
+    return { lang: await llmDetectLanguage(text), confident: false };
   }
 }
 

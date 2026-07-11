@@ -143,7 +143,7 @@ router.post("/translate", async (req: Request, res: Response) => {
   const tgt = (target || "en").trim();
   let src = (source || "").trim();
   if (!src || src === "auto") {
-    src = await detectLanguage(text).catch(() => "en");
+    src = (await detectLanguage(text).catch(() => null))?.lang ?? "en";
   }
   if (src === tgt) { res.json({ translated_text: text, source_lang: src, target_lang: tgt }); return; }
   const t = await translateText(text, src, tgt).catch(() => null);

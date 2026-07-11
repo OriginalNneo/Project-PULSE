@@ -17,6 +17,12 @@
 
 ---
 
+## Recent changes (2026-07-09–10 — WhatsApp Meta API + auto-deploy)
+
+- **Meta WhatsApp Cloud API integration.** `src/gateway/webhook.ts` rewritten from Twilio (form-encoded, HMAC-SHA1) to Meta Cloud API (JSON, HMAC-SHA256 `X-Hub-Signature-256`). New adapter `src/adapters/meta/client.ts` handles outbound messages via Graph API (`/{phone_number_id}/messages`) with `appsecret_proof`. GET `/webhook/whatsapp` handles the Meta hub-challenge verification handshake. Env vars: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`.
+- **GitHub webhook auto-deploy wired.** `POST /webhook/github` handler (`src/gateway/deploy.ts`) was already built; the GitHub webhook was not registered. Webhook created on `OriginalNneo/Project-PULSE` pointing at `https://pulse.nathanielbuilds.cc/webhook/github` — pushes to `UI_Frontend` now auto-deploy. `deploy/deploy-frontend.sh` updated to run `npm run build` before `pm2 restart` (previously omitted, causing 502 on deploy).
+- **Live system clarification.** Both pm2 processes (`pulse-backend` :3000, `pulse-frontend` :3001) run from `/nat/Project-PULSE`. `/opt/project-pulse` exists on disk but is **not used**.
+
 ## Recent changes (2026-06-26 — self-test / refactor pass 1)
 
 Full scorecard + hierarchical test plan: [`tests/SELF_TEST_REPORT.md`](./tests/SELF_TEST_REPORT.md). Added a runnable unit suite (`npm test` → **79/79 green**, 0 type errors).
@@ -74,7 +80,7 @@ Ring 4: Data & Integration Layer    (PostgreSQL, Redis, Kafka, Adapters)
 | :--- | :--- |
 | **Event-driven (Kafka)** | Services communicate asynchronously. Adding consumers doesn't affect producers. |
 | **Schema-per-service in PostgreSQL** | No service queries another's schema. Data isolation enforced at DB level. |
-| **Adapter pattern for externals** | Every external API (Singpass, SingPost, Twilio) wrapped in a swappable adapter implementing a common interface. |
+| **Adapter pattern for externals** | Every external API (Singpass, SingPost, Meta WhatsApp) wrapped in a swappable adapter implementing a common interface. |
 | **JWT in httpOnly cookies** | No tokens in localStorage. Short-lived access tokens (15 min) + rotated refresh tokens (7 days). |
 | **API versioning** (`/v1/`, `/v2/`) | Backward-compatible changes only. Breaking changes = new version. |
 | **Feature flags (Unleash/LaunchDarkly)** | Decouple deployment from release. Ship new code OFF, enable per-tenant. |
@@ -432,7 +438,8 @@ Each file below is a scaffold (`export {};`) ready for personality definitions, 
 | Domain agent knowledge bases | Not started | `src/agents/domain/*/knowledge/` |
 | Language glossaries | Not started | `src/agents/language/*/glossaries/` |
 | Dialect glossaries | Not started | `src/agents/dialect/*/*/glossaries/` |
-| External adapters (Singpass, Twilio, SingPost) | Not started | `src/adapters/` |
+| Meta WhatsApp adapter | Built | `src/adapters/meta/client.ts` (send + HMAC-SHA256 verify) |
+| External adapters (Singpass, SingPost) | Not started | `src/adapters/` |
 | CI/CD pipeline | Not started | `.github/workflows/` |
 | Infrastructure as Code | Not started | `infra/` |
 
@@ -503,7 +510,7 @@ The "Open Integrated ChatBot" node from the system diagram, built as three swapp
 | Subsystem | Interface | Active now | Swap to | Flag |
 | :--- | :--- | :--- | :--- | :--- |
 | **AI provider** | `AiProvider` (`src/services/ai/providers/`) | **z.ai GLM** (real, MongoDB-grounded) | **Hermes.AI** (placeholder until VPS endpoint wired) | `AI_PROVIDER=zai\|hermes` |
-| **Messaging channel** | `MessagingChannel` (`src/services/messaging/`) | **Telegram** (real, long-polling) | **WhatsApp** (Cloud API stub) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
+| **Messaging channel** | `MessagingChannel` (`src/services/messaging/`) | **Telegram** (real, long-polling) | **WhatsApp** (Meta Cloud API — live, webhook at `/webhook/whatsapp`) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
 
 All config lives in one typed loader: `src/config/integration.ts` (reads `.env`).
 
@@ -621,7 +628,7 @@ POST  /api/v1/officer/escalations/:escalationId/acknowledge
 
 Linked in the top nav as **CCU Dashboard**.
 
-New env vars: `AI_PROVIDER`, `HERMES_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`, `MESSAGING_CHANNEL`, `TELEGRAM_MODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OFFICER_CHAT_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`.
+New env vars: `AI_PROVIDER`, `HERMES_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`, `MESSAGING_CHANNEL`, `TELEGRAM_MODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OFFICER_CHAT_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`.
 
 ---
 

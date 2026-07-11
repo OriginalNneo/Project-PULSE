@@ -152,3 +152,10 @@ export function analyzeEscalation(
 function escalate(reason: NonNullable<EscalationReason>): EscalationDecision {
   return { shouldEscalate: true, reason, offerText: OFFER_TEXT[reason] };
 }
+
+// True when the message contains a life-event or complaint/dispute signal — used
+// by the urgency scorer to boost priority without re-running the full analyzer.
+export function hasFinancialUrgency(text: string): boolean {
+  const q = text.toLowerCase();
+  return LIFE_EVENTS.some((p) => p.test(q)) || COMPLAINTS.some((p) => p.test(q));
+}

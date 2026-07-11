@@ -11,6 +11,7 @@ import { startSessionTimeoutSweep } from "../services/session/manager.js";
 import { initQueue } from "../db/proxy-client.js";
 import { webhookRoutes } from "./webhook.js";
 import { telegramRoutes } from "./telegram.js";
+import { deployRoutes } from "./deploy.js";
 import { dashboardRoutes } from "./dashboard.js";
 import { requireAuth, rateLimiter, errorHandler, requestId, attachTraceContext } from "../shared/middleware/index.js";
 import { createServiceLogger } from "../shared/logger.js";
@@ -53,7 +54,12 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
-app.use(express.json({ limit: "15mb" }));           // audio base64 can be large
+app.use(express.json({
+  limit: "15mb",                                    // audio base64 can be large
+  verify: (req: Request, _res, buf: Buffer) => {
+    (req as any).rawBody = buf;                     // needed for GitHub HMAC verification
+  },
+}));
 app.use(express.urlencoded({ extended: false, limit: "15mb" }));
 app.use(requestId);
 app.use(attachTraceContext);
@@ -112,6 +118,9 @@ app.use("/api/v1/billing",         requireAuth, billingRoutes);
 app.use("/api/v1/console",        requireAuth, consoleRoutes);
 app.use("/api/v1/copilot",        requireAuth, copilotRoutes);
 app.use("/api/v1/adaptive-local", adaptiveLocalRoutes);
+
+// GitHub auto-deploy webhook — validates HMAC-SHA256 signature
+app.use("/webhook", deployRoutes);
 
 // WhatsApp inbound webhook — unauthenticated (Twilio signs requests instead)
 app.use("/webhook", webhookRoutes);
