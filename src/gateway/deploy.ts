@@ -12,7 +12,7 @@ const router = Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEPLOY_SCRIPT = path.resolve(__dirname, "../../deploy/deploy-frontend.sh");
 const SECRET = process.env.GITHUB_WEBHOOK_SECRET ?? "";
-const TARGET_REF = "refs/heads/UI_Frontend";
+const TARGET_REF = "refs/heads/main";
 
 function verifySignature(rawBody: Buffer, header: string): boolean {
   if (!SECRET || !header) return false;

@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${PULSE_REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
-BRANCH="UI_Frontend"
+BRANCH="main"
 
 echo "[deploy-frontend] repo=$REPO_DIR branch=$BRANCH"
 
