@@ -27,7 +27,6 @@ const FONT_HEADING = "var(--font-heading), Georgia, 'Times New Roman', serif";
 const FONT_BODY = "var(--font-body), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 const NAV_LINKS = [
-  { label: "Chat",              href: "/chat" },
   { label: "CPF Portal",        href: "/cpf" },
   { label: "Officer Dashboard", href: "/dashboard" },
   { label: "Text Us Demo",      href: "/textus" },
