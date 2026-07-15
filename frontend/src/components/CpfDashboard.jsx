@@ -26,30 +26,39 @@ const minsSince = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ?
 const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : String(uid).startsWith('wa:') ? 'WhatsApp' : String(uid).startsWith('web:') ? 'Text Us (Web)' : 'Member');
 const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:|web:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
 
-// Compliance guard: officers must never disclose a member's CPF account figures over chat.
-// Catches amounts written many ways — "$12,430", "66K", "66 thousand", "66,000", "66000" —
-// plus any bare number matching this case's known figures. Deliberately ignores plain 4-digit
-// years/ages and space-separated hotline numbers (e.g. 1800-227-1188) to avoid false positives.
-function containsAccountAmount(text, oc) {
+// Compliance guard: officers must never disclose a member's private CPF information over chat —
+// account balances/amounts (written any way, including evasions) or personal identifiers (NRIC/FIN).
+// The public hotline 1800-227-1188 is allow-listed so officers can still share it.
+const NUMWORD = "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)";
+const SPELLED_AMOUNT = new RegExp(`\\b${NUMWORD}(?:[\\s-]+${NUMWORD})*[\\s-]+(?:thousand|million|lakh)\\b`, "i");
+
+function containsSensitiveInfo(text, oc) {
   if (!text) return false;
-  const t = String(text);
-  // 1) Currency symbol beside digits: "$66", "$12,430", "S$66", "SGD 66"
-  if (/(?:\$|s\$|\bsgd\b)\s?\d/i.test(t)) return true;
-  // 2) "K" magnitude shorthand: "66K", "66 k", "1.2k"
-  if (/\d[\d.,]*\s?k\b/i.test(t)) return true;
-  // 3) Spelled magnitude: "66 thousand", "1.5 million", "66 grand", "5 lakh"
-  if (/\d[\d.,]*\s?(?:thousand|million|grand|lakh)\b/i.test(t)) return true;
-  // 4) Thousands-separated number: "66,000", "12,430"
-  if (/\d{1,3}(?:,\d{3})+/.test(t)) return true;
-  // 5) Any contiguous 5+ digit number: "66000", "12430", "43500"
-  if (/\b\d{5,}\b/.test(t)) return true;
-  // 6) A bare number that exactly matches one of the member's known figures (covers 4-digit
-  //    balances like "8,205" typed as "8205").
+  // Strip the public hotline first so it never trips the numeric rules.
+  const t = String(text).replace(/1800[\s.\-]?227[\s.\-]?1188/g, " ");
+
+  // Personal identifier — Singapore NRIC/FIN: S/T/F/G/M + 7 digits + checksum letter.
+  if (/\b[STFGM]\d{7}[A-Z]\b/i.test(t)) return true;
+
+  // ── Monetary amounts, many forms ──
+  if (/(?:\$|s\$|\bsgd\b)\s?\d/i.test(t)) return true;         // $12,430 / S$66 / SGD 66
+  if (/\d[\d.,]*\s?k\b/i.test(t)) return true;                  // 66K / 66 k / 1.2k
+  if (/\d[\d.,]*\s?(?:thousand|million|grand|lakh)\b/i.test(t)) return true; // 66 thousand
+  if (SPELLED_AMOUNT.test(t)) return true;                      // "sixty-six thousand"
+  if (/\d{1,3}(?:,\d{3})+/.test(t)) return true;               // 66,000
+  if (/\b\d{5,}\b/.test(t)) return true;                        // 66000
+
+  // Evasion: digits spaced/split with separators — "6 6 0 0 0", "6-6-0-0-0", "1 2, 4 3 0".
+  const collapsed = t.replace(/(\d)[\s.\-_]+(?=\d)/g, "$1");
+  if (/\d{5,}/.test(collapsed)) return true;
+
+  // A bare number exactly matching one of the member's known figures (covers 4-digit
+  // balances like "8,205" typed as "8205"), on either the raw or de-spaced text.
   const figures = new Set();
   const add = (v) => { const d = String(v ?? '').replace(/[^\d]/g, ''); if (d.length >= 3) figures.add(d); };
   if (oc && oc.balances) { add(oc.balances.oa); add(oc.balances.ma); add(oc.balances.ra); }
   if (oc && oc.retirement) { add(oc.retirement.payout); add(oc.retirement.shortfall); }
-  const nums = (t.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[^\d]/g, ''));
+  const nums = (`${t} ${collapsed}`.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[^\d]/g, ''));
   return nums.some((n) => figures.has(n));
 }
 
@@ -432,7 +441,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     if (!text || !id) return;
     // Account-amount guard — never let a member's CPF balances/amounts go out over chat.
     // Auto-clear the compose box and surface the red warning instead of sending.
-    if (containsAccountAmount(text, people[id])) {
+    if (containsSensitiveInfo(text, people[id])) {
       setDraft('');
       setAmountBlocked(true);
       return;
@@ -794,7 +803,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
               {amountBlocked && (
                 <div role="alert" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: '#fee4e2', borderTop: '1px solid #f5b5ad', color: '#912018', fontSize: 13, fontWeight: 600 }}>
                   <span aria-hidden="true">🚫</span>
-                  <span>Do not send account balances or amounts via text. Your message was cleared for the member’s security.</span>
+                  <span>Do not send account balances, amounts, or personal identifiers (e.g. NRIC) via text. Your message was cleared for the member’s security.</span>
                 </div>
               )}
               <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: '#f4f4f4', boxShadow: '0 -2px 5px rgba(0,0,0,.1)' }}>
