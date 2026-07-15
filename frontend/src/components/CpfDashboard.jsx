@@ -46,11 +46,13 @@ function containsSensitiveInfo(text, oc) {
   if (/\d[\d.,]*\s?(?:thousand|million|grand|lakh)\b/i.test(t)) return true; // 66 thousand
   if (SPELLED_AMOUNT.test(t)) return true;                      // "sixty-six thousand"
   if (/\d{1,3}(?:,\d{3})+/.test(t)) return true;               // 66,000
-  if (/\b\d{5,}\b/.test(t)) return true;                        // 66000
-
-  // Evasion: digits spaced/split with separators — "6 6 0 0 0", "6-6-0-0-0", "1 2, 4 3 0".
+  // Arithmetic used to disguise an amount: "60000+6000", "600 * 100", "6 x 10000".
+  if (/\d[\d.,\s]*[+*x×][\s]*\d/i.test(t)) return true;
+  // De-space / de-dash / de-dot evasion: "6 6 0 0 0", "6-6-0-0-0", "1 2 4 3 0" -> "12430".
   const collapsed = t.replace(/(\d)[\s.\-_]+(?=\d)/g, "$1");
-  if (/\d{5,}/.test(collapsed)) return true;
+  // Any 4+ digit number >= 1000, excluding a plain 4-digit year (1900-2099).
+  const looksLikeAmount = (s) => (s.match(/\b\d{4,}\b/g) || []).some((n) => { const v = Number(n); return v >= 1000 && !(n.length === 4 && v >= 1900 && v <= 2099); });
+  if (looksLikeAmount(t) || looksLikeAmount(collapsed)) return true;
 
   // A bare number exactly matching one of the member's known figures (covers 4-digit
   // balances like "8,205" typed as "8205"), on either the raw or de-spaced text.
@@ -288,7 +290,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
   const [draft, setDraft] = useState('');
-  const [amountBlocked, setAmountBlocked] = useState(false); // account-amount guard tripped
   const [typing, setTyping] = useState(false);
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
@@ -439,14 +440,9 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     const id = openChatId;
     const text = (draft || '').trim();
     if (!text || !id) return;
-    // Account-amount guard — never let a member's CPF balances/amounts go out over chat.
-    // Auto-clear the compose box and surface the red warning instead of sending.
-    if (containsSensitiveInfo(text, people[id])) {
-      setDraft('');
-      setAmountBlocked(true);
-      return;
-    }
-    setAmountBlocked(false);
+    // Compliance guard — never let a member's private info go out. The live banner (computed
+    // from `draft` on every keystroke) already warns; this just refuses to send while flagged.
+    if (containsSensitiveInfo(text, people[id])) return;
     // Optimistic append for instant feedback; the backend persists it to chat_history,
     // so the next refetch shows it interleaved chronologically (no duplicate).
     setThreads((t) => ({ ...t, [id]: [...(t[id] || []), { from: 'officer', text }] }));
@@ -507,6 +503,9 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
 
   const oc = people[openChatId];
   const hasOpen = !!oc;
+  // Live compliance flag — recomputed on every keystroke so the officer is warned the moment
+  // they type a member's private info (amount/identifier), before they can send it.
+  const composeFlag = draft.trim() ? containsSensitiveInfo(draft, oc) : false;
   const msgs = (threads[openChatId] || []).map((m, i) => ({ ...m, right: m.from === 'officer', key: i }));
 
   const schemesList = hasOpen ? oc.schemes.map((s) => ({ name: s[0], status: s[1] })) : [];
@@ -800,18 +799,18 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                   <span>🌐</span><span>{`Type in English — replies are auto-translated to ${oc.language} before sending.`}</span>
                 </div>
               )}
-              {amountBlocked && (
+              {composeFlag && (
                 <div role="alert" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: '#fee4e2', borderTop: '1px solid #f5b5ad', color: '#912018', fontSize: 13, fontWeight: 600 }}>
                   <span aria-hidden="true">🚫</span>
-                  <span>Do not send account balances, amounts, or personal identifiers (e.g. NRIC) via text. Your message was cleared for the member’s security.</span>
+                  <span>This looks like a member’s account amount or personal identifier (e.g. NRIC). For their security it can’t be sent by text — please remove it.</span>
                 </div>
               )}
               <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: '#f4f4f4', boxShadow: '0 -2px 5px rgba(0,0,0,.1)' }}>
                 <div className="cpf-icon-btn" style={{ width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                 </div>
-                <input className="cpf-input" value={draft} onChange={(e) => { setDraft(e.target.value); if (amountBlocked) setAmountBlocked(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }} placeholder="Type a message…" style={{ flex: 1, border: 'none', outline: 'none', background: '#fff', borderRadius: 24, padding: '14px 20px', fontSize: 15, fontFamily: 'inherit', boxShadow: `inset 0 0 0 ${amountBlocked ? '2px #d92d20' : '1px #ddd'}` }} />
-                <div className="cpf-send-btn" onClick={send} style={{ width: 50, height: 50, borderRadius: '50%', background: '#0a6160', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none', boxShadow: '0 2px 6px rgba(10,97,96,.4)' }}>
+                <input className="cpf-input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }} placeholder="Type a message…" style={{ flex: 1, border: 'none', outline: 'none', background: '#fff', borderRadius: 24, padding: '14px 20px', fontSize: 15, fontFamily: 'inherit', boxShadow: `inset 0 0 0 ${composeFlag ? '2px #d92d20' : '1px #ddd'}` }} />
+                <div className="cpf-send-btn" onClick={composeFlag ? undefined : send} style={{ width: 50, height: 50, borderRadius: '50%', background: composeFlag ? '#c9ccce' : '#0a6160', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: composeFlag ? 'not-allowed' : 'pointer', flex: 'none', boxShadow: '0 2px 6px rgba(10,97,96,.4)' }}>
                   <svg viewBox="0 0 24 24" width="23" height="23" fill="#fff"><path d="M3 20l18-8L3 4v6.2l12 1.8-12 1.8z" /></svg>
                 </div>
               </div>
