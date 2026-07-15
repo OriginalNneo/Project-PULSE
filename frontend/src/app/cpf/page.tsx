@@ -306,10 +306,12 @@ function PulseWidget() {
       if(!r.ok) throw new Error();
       const j = await r.json();
       const d = j?.data;
-      // Offer a human handoff only when the user explicitly asks for one, or when the bot
-      // flags the query for a human (requiresHumanReview — e.g. personal/account data).
+      // Offer a human handoff ONLY when the user explicitly asks for one, or when the query
+      // concerns their personal/account data (intent "personal_data"). Deliberately NOT on
+      // requiresHumanReview alone — that also fires on low-confidence small talk like "hello".
       const asked = /\b(officer|human|real person|agent|representative|speak to (?:someone|a person)|talk to (?:someone|a person|an officer)|customer service)\b/i.test(t);
-      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:!!d?.requiresHumanReview||asked}]);
+      const privateInfo = d?.intent === "personal_data";
+      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:asked||privateInfo}]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
     finally { setBusy(false); setTimeout(()=>logRef.current?.scrollTo({top:9999,behavior:"smooth"}),50); }
   }
