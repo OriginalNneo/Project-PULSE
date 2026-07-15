@@ -252,6 +252,24 @@ type Role = "user"|"agent";
 interface Msg { role:Role; content:string; offer?:boolean; } // offer: bot suggested connecting to a human officer
 const CHAT_LANGS = [{ l:"EN",c:"en"},{l:"中文",c:"zh"},{l:"BM",c:"ms"},{l:"த",c:"ta"}];
 
+// Minimal markdown for bot replies: **bold**, "- " bullets, and line breaks — so the
+// model's markdown renders instead of showing literal ** and dashes.
+function renderMd(text:string) {
+  const boldify = (s:string) =>
+    s.split(/(\*\*[^*]+\*\*)/g).map((p,i)=>{
+      const m=/^\*\*([^*]+)\*\*$/.exec(p);
+      return m ? <strong key={i}>{m[1]}</strong> : <span key={i}>{p}</span>;
+    });
+  return String(text).split(/\r?\n/).map((ln,i)=>{
+    if(ln.trim()==="") return <div key={i} style={{height:5}} />;
+    const bullet=/^\s*[-–•]\s+/.test(ln);
+    const body=bullet?ln.replace(/^\s*[-–•]\s+/,""):ln;
+    return bullet
+      ? <div key={i} style={{display:"flex",gap:6,paddingLeft:2}}><span aria-hidden="true" style={{flexShrink:0}}>•</span><span>{boldify(body)}</span></div>
+      : <div key={i}>{boldify(body)}</div>;
+  });
+}
+
 function PulseWidget() {
   const [open,setOpen] = useState(false);
   const [msgs,setMsgs] = useState<Msg[]>([{role:"agent",content:"Hi! I'm PULSE, CPF Board's virtual assistant. Ask me anything about CPF schemes, contributions, or account services."}]);
@@ -288,9 +306,10 @@ function PulseWidget() {
       if(!r.ok) throw new Error();
       const j = await r.json();
       const d = j?.data;
-      // When the bot flags the query for a human (requiresHumanReview), surface an inline
-      // "talk to a real person" button under this reply.
-      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:!!d?.requiresHumanReview}]);
+      // Offer a human handoff only when the user explicitly asks for one, or when the bot
+      // flags the query for a human (requiresHumanReview — e.g. personal/account data).
+      const asked = /\b(officer|human|real person|agent|representative|speak to (?:someone|a person)|talk to (?:someone|a person|an officer)|customer service)\b/i.test(t);
+      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:!!d?.requiresHumanReview||asked}]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
     finally { setBusy(false); setTimeout(()=>logRef.current?.scrollTo({top:9999,behavior:"smooth"}),50); }
   }
@@ -317,7 +336,7 @@ function PulseWidget() {
           <div ref={logRef} style={{flex:1,overflowY:"auto",padding:"12px",display:"flex",flexDirection:"column",gap:9,background:"#f4f5f6"}}>
             {msgs.map((m,i)=>(
               <div key={i} style={{display:"flex",flexDirection:"column",alignItems:m.role==="user"?"flex-end":"flex-start",gap:6}}>
-                <div style={{maxWidth:"82%",padding:"9px 12px",borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",background:m.role==="user"?CPF.teal:CPF.white,color:m.role==="user"?CPF.white:CPF.text,fontSize:13,lineHeight:1.55,boxShadow:"0 1px 3px rgba(0,0,0,.08)"}}>{m.content}</div>
+                <div style={{maxWidth:"82%",padding:"9px 12px",borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",background:m.role==="user"?CPF.teal:CPF.white,color:m.role==="user"?CPF.white:CPF.text,fontSize:13,lineHeight:1.55,boxShadow:"0 1px 3px rgba(0,0,0,.08)",display:"flex",flexDirection:"column",gap:2}}>{m.role==="agent"?renderMd(m.content):m.content}</div>
                 {m.role==="agent"&&m.offer&&(
                   <button onClick={()=>void connectOfficer()} disabled={connecting}
                     style={{maxWidth:"90%",border:"none",background:connecting?"#e6efee":CPF.teal,color:connecting?CPF.teal:CPF.white,borderRadius:8,padding:"9px 14px",fontSize:12.5,fontWeight:700,cursor:connecting?"default":"pointer",boxShadow:"0 2px 6px rgba(10,97,96,.3)",display:"flex",alignItems:"center",gap:7,lineHeight:1.3}}>
@@ -328,11 +347,6 @@ function PulseWidget() {
             ))}
             {busy&&<div style={{alignSelf:"flex-start",background:CPF.white,borderRadius:"12px 12px 12px 3px",padding:"9px 14px",fontSize:18,letterSpacing:3,color:"#bbb",boxShadow:"0 1px 3px rgba(0,0,0,.08)"}}>···</div>}
             {err&&<p style={{color:"#c00",fontSize:12,textAlign:"center"}}>{err}</p>}
-          </div>
-          <div style={{flexShrink:0,padding:"8px 11px",borderTop:`1px solid ${CPF.border}`,background:CPF.white}}>
-            <button onClick={()=>void connectOfficer()} disabled={connecting} style={{width:"100%",border:`1.5px solid ${CPF.teal}`,background:connecting?"#e6efee":CPF.white,color:CPF.teal,borderRadius:6,padding:"8px 10px",fontSize:12.5,fontWeight:700,cursor:connecting?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-              <span aria-hidden="true">👤</span>{connecting?"Connecting you to an officer…":"Talk to a CPF officer"}
-            </button>
           </div>
           <div style={{flexShrink:0,padding:"9px 11px",borderTop:`1px solid ${CPF.border}`,display:"flex",gap:8,background:CPF.white}}>
             <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Type your question…" rows={2} disabled={busy}

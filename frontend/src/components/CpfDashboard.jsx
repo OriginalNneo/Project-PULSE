@@ -27,19 +27,29 @@ const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : Strin
 const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:|web:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
 
 // Compliance guard: officers must never disclose a member's CPF account figures over chat.
-// Returns true if the outgoing reply contains a dollar amount, or a bare number matching one
-// of this case's known balances / retirement figures (OA, MA, RA, monthly payout, shortfall).
+// Catches amounts written many ways — "$12,430", "66K", "66 thousand", "66,000", "66000" —
+// plus any bare number matching this case's known figures. Deliberately ignores plain 4-digit
+// years/ages and space-separated hotline numbers (e.g. 1800-227-1188) to avoid false positives.
 function containsAccountAmount(text, oc) {
   if (!text) return false;
-  // In a CPF officer chat any "$…" figure is, in practice, an account/scheme amount → block.
-  if (/\$\s?\d/.test(text)) return true;
-  // Also catch bare numbers that exactly match the member's known figures.
+  const t = String(text);
+  // 1) Currency symbol beside digits: "$66", "$12,430", "S$66", "SGD 66"
+  if (/(?:\$|s\$|\bsgd\b)\s?\d/i.test(t)) return true;
+  // 2) "K" magnitude shorthand: "66K", "66 k", "1.2k"
+  if (/\d[\d.,]*\s?k\b/i.test(t)) return true;
+  // 3) Spelled magnitude: "66 thousand", "1.5 million", "66 grand", "5 lakh"
+  if (/\d[\d.,]*\s?(?:thousand|million|grand|lakh)\b/i.test(t)) return true;
+  // 4) Thousands-separated number: "66,000", "12,430"
+  if (/\d{1,3}(?:,\d{3})+/.test(t)) return true;
+  // 5) Any contiguous 5+ digit number: "66000", "12430", "43500"
+  if (/\b\d{5,}\b/.test(t)) return true;
+  // 6) A bare number that exactly matches one of the member's known figures (covers 4-digit
+  //    balances like "8,205" typed as "8205").
   const figures = new Set();
   const add = (v) => { const d = String(v ?? '').replace(/[^\d]/g, ''); if (d.length >= 3) figures.add(d); };
   if (oc && oc.balances) { add(oc.balances.oa); add(oc.balances.ma); add(oc.balances.ra); }
   if (oc && oc.retirement) { add(oc.retirement.payout); add(oc.retirement.shortfall); }
-  if (figures.size === 0) return false;
-  const nums = (text.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[^\d]/g, ''));
+  const nums = (t.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[^\d]/g, ''));
   return nums.some((n) => figures.has(n));
 }
 
