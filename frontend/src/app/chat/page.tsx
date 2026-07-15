@@ -183,6 +183,23 @@ export default function ChatPage() {
         </button>
       </form>
 
+      {/* Persistent disclaimer — always visible while the chat window is open (scenario: policy ambiguity) */}
+      <p
+        role="note"
+        style={{
+          background: "#fff8e1",
+          border: "1px solid #f0d878",
+          color: "#7a5c00",
+          borderRadius: 8,
+          padding: "8px 12px",
+          fontSize: 12.5,
+          lineHeight: 1.4,
+          margin: "10px 0",
+        }}
+      >
+        ⚠️ AI responses may not reflect the latest CPF policies. Please verify with a Customer Care Officer.
+      </p>
+
       {/* Voice message control */}
       <div aria-label="Voice message">
         {!isRecording ? (
