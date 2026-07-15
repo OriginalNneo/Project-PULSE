@@ -343,12 +343,12 @@ export default function CpfPage() {
 
   return (
     <>
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         html{scroll-behavior:smooth;}
         body{background:${CPF.bg};font-family:${FONT};}
-      `}</style>
+      ` }} />
 
       <BackHomeButton />
 
@@ -472,8 +472,11 @@ export default function CpfPage() {
             <h2 style={{fontSize:28,fontWeight:800,color:CPF.teal,marginBottom:8,letterSpacing:"-0.5px"}}>{t.tTitle}</h2>
             <div style={{width:56,height:5,background:CPF.lime,borderRadius:3,marginBottom:32}} />
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:20}}>
-              {TOPICS.map(tp=>(
-                <div key={tp.id} style={{background:CPF.white,borderRadius:10,border:`1px solid ${CPF.border}`,padding:"28px 24px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,.06)",transition:"box-shadow .2s"}}
+              {TOPICS.map(tp=>{
+                const clickable = tp.id === "housing";
+                return (
+                <div key={tp.id} onClick={clickable ? ()=>{ window.location.href = "/cpf/housing"; } : undefined}
+                  style={{background:CPF.white,borderRadius:10,border:`1px solid ${CPF.border}`,padding:"28px 24px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,.06)",transition:"box-shadow .2s",cursor:clickable?"pointer":"default"}}
                   onMouseEnter={e=>(e.currentTarget as HTMLDivElement).style.boxShadow="0 4px 16px rgba(0,0,0,.12)"}
                   onMouseLeave={e=>(e.currentTarget as HTMLDivElement).style.boxShadow="0 1px 4px rgba(0,0,0,.06)"}>
                   <div style={{width:64,height:64,borderRadius:"50%",background:tp.light,color:tp.color,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
@@ -485,7 +488,7 @@ export default function CpfPage() {
                     <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,color:CPF.light,marginBottom:12}}>Related information</p>
                     <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
                       {tp.links.map(lk=>(
-                        <button key={lk} onClick={()=>demo(`Opening: ${lk}`)}
+                        <button key={lk} onClick={e=>{e.stopPropagation(); clickable ? (window.location.href = "/cpf/housing") : demo(`Opening: ${lk}`);}}
                           style={{background:CPF.white,color:tp.color,border:`1.5px solid ${tp.color}`,borderRadius:20,padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:FONT,transition:"background .15s,color .15s"}}
                           onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background=tp.color;(e.currentTarget as HTMLButtonElement).style.color=CPF.white;}}
                           onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background=CPF.white;(e.currentTarget as HTMLButtonElement).style.color=tp.color;}}>
@@ -495,7 +498,8 @@ export default function CpfPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
