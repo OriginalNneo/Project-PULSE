@@ -248,7 +248,7 @@ export default function HomePage() {
 
           {/* CTAs */}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" as const, justifyContent: "center" }}>
-            <a href="/chat"
+            <a href="/cpf?chat=open"
               style={{ background: C.teal, color: C.bg, textDecoration: "none", padding: "14px 32px", borderRadius: 10, fontWeight: 700, fontSize: 15, boxShadow: "0 4px 18px rgba(11,97,96,.22)", transition: "transform .15s, box-shadow .15s, background .15s", display: "block" }}
               onMouseEnter={(e) => { const el = e.currentTarget as HTMLAnchorElement; el.style.transform = "translateY(-2px)"; el.style.background = "#094f4e"; el.style.boxShadow = "0 8px 24px rgba(11,97,96,.3)"; }}
               onMouseLeave={(e) => { const el = e.currentTarget as HTMLAnchorElement; el.style.transform = "translateY(0)"; el.style.background = C.teal; el.style.boxShadow = "0 4px 18px rgba(11,97,96,.22)"; }}>

@@ -278,6 +278,9 @@ function PulseWidget() {
   const [busy,setBusy] = useState(false);
   const [err,setErr]   = useState<string|null>(null);
   const [connecting,setConnecting] = useState(false);
+
+  // Auto-open the chatbot when arrived via a "Try the chatbot" link (/cpf?chat=open).
+  useEffect(()=>{ if(typeof window!=="undefined" && /[?&]chat=open\b/.test(window.location.search)) setOpen(true); },[]);
   const logRef = useRef<HTMLDivElement>(null);
 
   // Hand off to a human CCU officer: escalate carrying this conversation as context, then

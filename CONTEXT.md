@@ -512,7 +512,7 @@ The "Open Integrated ChatBot" node from the system diagram, built as three swapp
 | **AI provider** | `AiProvider` (`src/services/ai/providers/`) | **z.ai GLM** (real, MongoDB-grounded) | **Hermes.AI** (placeholder until VPS endpoint wired) | `AI_PROVIDER=zai\|hermes` |
 | **Messaging channel** | `MessagingChannel` (`src/services/messaging/`) | **Telegram** (real, long-polling) | **WhatsApp** (Meta Cloud API — live, webhook at `/webhook/whatsapp`) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
 
-All config lives in one typed loader: `src/config/integration.ts` (reads `.env`).
+Config is read from `.env` (via `dotenv`) directly by each module — the old central `src/config/integration.ts` loader was removed in the 2026-06-26 cleanup.
 
 ### Flow
 
