@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import BackHomeButton from "@/components/BackHomeButton";
+
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
 const PREFILL =
   "[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.";
@@ -137,10 +139,61 @@ export default function TextUsDemoPage() {
   const [messages, setMessages] = useState<Bubble[]>([]);
   const [confirm, setConfirm] = useState<PendingAction>(null);
   const [active, setActive] = useState<PendingAction>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const cursorRef = useRef(0);
 
-  const tampered = input.trim() !== PREFILL.trim();
+  const live = sessionId !== null;
+  const tampered = !live && input.trim() !== PREFILL.trim();
 
-  function onSend() {
+  // Bind to a web session (?s=…) handed off from the CPF portal chatbot's
+  // "Talk to a CPF officer" button. In live mode the pre-fill gimmick is dropped and
+  // messages are relayed to / polled from the officer dashboard (the web channel).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const s = new URLSearchParams(window.location.search).get("s");
+    if (s) { setSessionId(s); setInput(""); }
+  }, []);
+
+  // Short-poll the backend for officer / system replies while a session is live.
+  useEffect(() => {
+    if (!sessionId) return;
+    let stopped = false;
+    async function poll() {
+      try {
+        const r = await fetch(`${API_BASE}/webchat/${sessionId}/poll?since=${cursorRef.current}`);
+        if (!r.ok) return;
+        const j = await r.json();
+        if (typeof j?.cursor === "number") cursorRef.current = j.cursor;
+        const incoming: Bubble[] = (j?.messages ?? []).map((m: { text: string }) => ({ from: "system" as const, text: m.text }));
+        if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
+      } catch { /* transient — retry next tick */ }
+    }
+    void poll();
+    const id = setInterval(() => { if (!stopped) void poll(); }, 2000);
+    return () => { stopped = true; clearInterval(id); };
+  }, [sessionId]);
+
+  async function onSend() {
+    // ── Live mode: real web channel wired to the officer dashboard ──
+    if (live) {
+      const t = input.trim();
+      if (!t) return;
+      setError(null);
+      setMessages((m) => [...m, { from: "user", text: t }]);
+      setInput("");
+      try {
+        await fetch(`${API_BASE}/webchat/${sessionId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: t }),
+        });
+      } catch {
+        setError("Couldn't reach CPF Board — please check your connection and try again.");
+      }
+      return;
+    }
+
+    // ── Standalone demo mode: the original pre-filled-message simulation ──
     if (tampered) {
       setError(
         "⚠️ Message not sent. Please don't edit or delete the pre-filled message — send it exactly as it is to start your chat. Tap \"Restore\" below, or start a new chat from the official CPF Text Us link.",
@@ -267,9 +320,14 @@ export default function TextUsDemoPage() {
               🔒 Messages are end-to-end encrypted
             </div>
 
-            {messages.length === 0 && (
+            {!live && messages.length === 0 && (
               <div style={{ alignSelf: "center", background: "#FFF8C5", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#7a6a2f", textAlign: "center", maxWidth: "88%", marginTop: 4, lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
                 The message below has been pre-filled by CPF Board.<br />Press Send to begin — please don't edit it.
+              </div>
+            )}
+            {live && messages.length === 0 && (
+              <div style={{ alignSelf: "center", background: "#FFF8C5", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#7a6a2f", textAlign: "center", maxWidth: "88%", marginTop: 4, lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
+                Connecting you to a CPF officer… you can start typing your question.
               </div>
             )}
 

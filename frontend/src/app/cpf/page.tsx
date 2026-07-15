@@ -259,7 +259,23 @@ function PulseWidget() {
   const [lang,setLang] = useState("en");
   const [busy,setBusy] = useState(false);
   const [err,setErr]   = useState<string|null>(null);
+  const [connecting,setConnecting] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+
+  // Hand off to a human CCU officer: escalate carrying this conversation as context, then
+  // open the Text Us page bound to the same web session so the chat continues live there.
+  async function connectOfficer() {
+    if (connecting) return;
+    setConnecting(true);
+    const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await fetch(`${API_BASE}/webchat/${sessionId}/connect`,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({conversationHistory:msgs,language:lang})});
+    } catch { /* proceed anyway — the Text Us page can still resume this session */ }
+    window.location.href = `/textus?s=${encodeURIComponent(sessionId)}`;
+  }
 
   async function send() {
     const t = text.trim(); if(!t||busy) return;
@@ -303,6 +319,11 @@ function PulseWidget() {
             ))}
             {busy&&<div style={{alignSelf:"flex-start",background:CPF.white,borderRadius:"12px 12px 12px 3px",padding:"9px 14px",fontSize:18,letterSpacing:3,color:"#bbb",boxShadow:"0 1px 3px rgba(0,0,0,.08)"}}>···</div>}
             {err&&<p style={{color:"#c00",fontSize:12,textAlign:"center"}}>{err}</p>}
+          </div>
+          <div style={{flexShrink:0,padding:"8px 11px",borderTop:`1px solid ${CPF.border}`,background:CPF.white}}>
+            <button onClick={()=>void connectOfficer()} disabled={connecting} style={{width:"100%",border:`1.5px solid ${CPF.teal}`,background:connecting?"#e6efee":CPF.white,color:CPF.teal,borderRadius:6,padding:"8px 10px",fontSize:12.5,fontWeight:700,cursor:connecting?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              <span aria-hidden="true">👤</span>{connecting?"Connecting you to an officer…":"Talk to a CPF officer"}
+            </button>
           </div>
           <div style={{flexShrink:0,padding:"9px 11px",borderTop:`1px solid ${CPF.border}`,display:"flex",gap:8,background:CPF.white}}>
             <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Type your question…" rows={2} disabled={busy}

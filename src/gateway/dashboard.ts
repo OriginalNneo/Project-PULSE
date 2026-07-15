@@ -103,6 +103,12 @@ router.post("/send/:queueId", async (req: Request, res: Response) => {
     const phoneNumber = entry.userId.slice(3);
     await sendWhatsAppMessage(phoneNumber, outboundText);
     log.info({ queueId: req.params.queueId, officerId, to: phoneNumber }, "Officer message sent to WhatsApp user");
+  } else if (entry.userId.startsWith("web:")) {
+    // Text Us web user — push onto the per-session bus for the browser's next poll
+    const sessionId = entry.userId.slice(4);
+    const { pushToWeb } = await import("../adapters/web/bus.js");
+    pushToWeb(sessionId, { from: "officer", text: outboundText });
+    log.info({ queueId: req.params.queueId, officerId, sessionId }, "Officer message sent to Text Us web user");
   } else {
     res.status(400).json({ error: "Unsupported channel for this queue entry" });
     return;

@@ -23,8 +23,25 @@ const sentFromEmotion = (label) => EMO_TO_SENT[String(label || '').toLowerCase()
 const LANG_NAME = { en: 'English', zh: 'Mandarin', ms: 'Malay', ta: 'Tamil', hi: 'Hindi', ml: 'Malayalam', pa: 'Punjabi' };
 const urgencyFromScore = (s) => { const n = s > 1 ? s : s * 100; return n >= 66 ? 'urgent' : n >= 33 ? 'medium' : 'low'; }; // scores are 0–100
 const minsSince = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? 0 : Math.max(0, Math.round((Date.now() - t) / 60000)); };
-const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : String(uid).startsWith('wa:') ? 'WhatsApp' : 'Member');
-const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
+const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : String(uid).startsWith('wa:') ? 'WhatsApp' : String(uid).startsWith('web:') ? 'Text Us (Web)' : 'Member');
+const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:|web:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
+
+// Compliance guard: officers must never disclose a member's CPF account figures over chat.
+// Returns true if the outgoing reply contains a dollar amount, or a bare number matching one
+// of this case's known balances / retirement figures (OA, MA, RA, monthly payout, shortfall).
+function containsAccountAmount(text, oc) {
+  if (!text) return false;
+  // In a CPF officer chat any "$…" figure is, in practice, an account/scheme amount → block.
+  if (/\$\s?\d/.test(text)) return true;
+  // Also catch bare numbers that exactly match the member's known figures.
+  const figures = new Set();
+  const add = (v) => { const d = String(v ?? '').replace(/[^\d]/g, ''); if (d.length >= 3) figures.add(d); };
+  if (oc && oc.balances) { add(oc.balances.oa); add(oc.balances.ma); add(oc.balances.ra); }
+  if (oc && oc.retirement) { add(oc.retirement.payout); add(oc.retirement.shortfall); }
+  if (figures.size === 0) return false;
+  const nums = (text.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[^\d]/g, ''));
+  return nums.some((n) => figures.has(n));
+}
 
 // Realistic mock identities — the backend queue carries none, so each case is assigned
 // one deterministically (stable per case) to fill the profile + chat header. Display only.
@@ -252,6 +269,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
   const [draft, setDraft] = useState('');
+  const [amountBlocked, setAmountBlocked] = useState(false); // account-amount guard tripped
   const [typing, setTyping] = useState(false);
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
@@ -402,6 +420,14 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     const id = openChatId;
     const text = (draft || '').trim();
     if (!text || !id) return;
+    // Account-amount guard — never let a member's CPF balances/amounts go out over chat.
+    // Auto-clear the compose box and surface the red warning instead of sending.
+    if (containsAccountAmount(text, people[id])) {
+      setDraft('');
+      setAmountBlocked(true);
+      return;
+    }
+    setAmountBlocked(false);
     // Optimistic append for instant feedback; the backend persists it to chat_history,
     // so the next refetch shows it interleaved chronologically (no duplicate).
     setThreads((t) => ({ ...t, [id]: [...(t[id] || []), { from: 'officer', text }] }));
@@ -414,7 +440,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         body: JSON.stringify({ message: text, officerId: OFFICER_ID }),
       });
     } catch { /* keep the optimistic message even if the send fails */ }
-  }, [openChatId, draft]);
+  }, [openChatId, draft, people]);
 
   /* ---- derived view data ---- */
 
@@ -755,11 +781,17 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                   <span>🌐</span><span>{`Type in English — replies are auto-translated to ${oc.language} before sending.`}</span>
                 </div>
               )}
+              {amountBlocked && (
+                <div role="alert" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: '#fee4e2', borderTop: '1px solid #f5b5ad', color: '#912018', fontSize: 13, fontWeight: 600 }}>
+                  <span aria-hidden="true">🚫</span>
+                  <span>Do not send account balances or amounts via text. Your message was cleared for the member’s security.</span>
+                </div>
+              )}
               <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: '#f4f4f4', boxShadow: '0 -2px 5px rgba(0,0,0,.1)' }}>
                 <div className="cpf-icon-btn" style={{ width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                 </div>
-                <input className="cpf-input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }} placeholder="Type a message…" style={{ flex: 1, border: 'none', outline: 'none', background: '#fff', borderRadius: 24, padding: '14px 20px', fontSize: 15, fontFamily: 'inherit', boxShadow: 'inset 0 0 0 1px #ddd' }} />
+                <input className="cpf-input" value={draft} onChange={(e) => { setDraft(e.target.value); if (amountBlocked) setAmountBlocked(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }} placeholder="Type a message…" style={{ flex: 1, border: 'none', outline: 'none', background: '#fff', borderRadius: 24, padding: '14px 20px', fontSize: 15, fontFamily: 'inherit', boxShadow: `inset 0 0 0 ${amountBlocked ? '2px #d92d20' : '1px #ddd'}` }} />
                 <div className="cpf-send-btn" onClick={send} style={{ width: 50, height: 50, borderRadius: '50%', background: '#0a6160', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none', boxShadow: '0 2px 6px rgba(10,97,96,.4)' }}>
                   <svg viewBox="0 0 24 24" width="23" height="23" fill="#fff"><path d="M3 20l18-8L3 4v6.2l12 1.8-12 1.8z" /></svg>
                 </div>

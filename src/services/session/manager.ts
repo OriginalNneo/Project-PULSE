@@ -85,7 +85,9 @@ export function getRatings(): RatingRecord[] {
 }
 
 function channelOf(userId: string): string {
-  return userId.startsWith("wa:") ? "wa" : "tg";
+  if (userId.startsWith("wa:")) return "wa";
+  if (userId.startsWith("web:")) return "web";
+  return "tg";
 }
 
 /**
@@ -160,6 +162,11 @@ async function sendRatingPrompt(userId: string, sessionId: string, lang: string,
     await sendWhatsAppMessage(phone, `${text}\n\nReply with a number from 1 (poor) to 5 (excellent).`).catch((e: unknown) =>
       log.warn({ e }, "rating prompt (wa) failed"),
     );
+  } else if (channel === "web") {
+    // Text Us web user — push the close/rating note onto the poll bus (no inline buttons on web).
+    const sessionId = userId.slice(4);
+    const { pushToWeb } = await import("../../adapters/web/bus.js");
+    pushToWeb(sessionId, { from: "system", text: `${text}\n\nReply with a number from 1 (poor) to 5 (excellent).` });
   }
 }
 
