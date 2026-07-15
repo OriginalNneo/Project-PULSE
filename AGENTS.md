@@ -4,7 +4,7 @@
 - **Name**: PULSE — People-centric Framework for Correspondence (PFC)
 - **Purpose**: Transform Singapore government correspondence into adaptive, inclusive, accessible communications for vulnerable citizens
 - **Location**: /nat/Project-PULSE/
-- **Status**: Live Telegram CPF assistant — RAG answers grounded in MongoDB CPF knowledge, interactive guiding questions, government-standard concise formatting, native-language generation (+ GLM translation fallback), emotion-driven tone adaptation, CCU officer escalation, and CSAT rating + session lifecycle — running on top of the scaffolded multi-service architecture. (OpenClaw domain/language/dialect agent stubs, glossaries, external adapters, CI/CD still pending.)
+- **Status**: Live multi-channel CPF assistant over **Telegram, WhatsApp, and an in-browser "Text Us" web chat** — RAG answers grounded in MongoDB CPF knowledge, interactive guiding questions, government-standard concise formatting, native-language generation (+ GLM translation fallback), emotion-driven tone adaptation, CCU officer escalation via one shared dashboard, and CSAT rating + session lifecycle — running on top of the scaffolded multi-service architecture. (OpenClaw domain/language/dialect agent stubs, glossaries, external adapters, CI/CD still pending.)
 
 ## Architecture
 - **Backend**: Node.js/Express (TypeScript), 9 microservices behind API Gateway
@@ -13,6 +13,21 @@
 - **Auth**: Singpass/Corppass, JWT in httpOnly cookies
 - **AI**: OpenClaw multi-agent framework with Orchestrator → Domain → Language/Dialect → Accessibility → Guardian pipeline
 - **Security**: 4-ring model (Edge → API Gateway → Services → Data)
+
+## Recent changes (2026-07-15 — Text Us web channel + officer compliance guard)
+- **New `web:` channel** — the CPF portal chatbot (`/cpf`) escalates to a human over
+  `POST /webchat/:sessionId/connect` (carrying the chatbot conversation as case context), then continues
+  live on the phone-styled Text Us page (`/textus?s=…`). Backend: `src/adapters/web/bus.ts` (in-memory
+  per-session poll bus) + `src/gateway/webchat.ts` (`makeWebChannel` + connect/send/poll routes), mounted
+  unauthenticated at `/webchat`. `dashboard.ts`, `inbound.ts`, and `session/manager.ts` route the `web:`
+  prefix alongside `tg:`/`wa:`. The connect button shows only on explicit request or a `personal_data` query.
+- **CCU officer dashboard** (`CpfDashboard.jsx`) — labels `web:` cases as "Text Us (Web)"; **compliance
+  guard**: as the officer types, a client-side check blocks a member's account amounts (any form incl.
+  `66K`, `66,000`, spaced/`6 6 0 0 0`, arithmetic) and NRIC/FIN, with a live red warning and disabled send;
+  the `1800-227-1188` hotline / years / ages are allow-listed.
+- **Chatbot** renders lightweight markdown (bold, bullets); homepage header "Chat" nav item removed.
+- **Deploy**: Caddy `@backend` matcher extended with `/webchat/*`; frontend auto-deploys from `main`,
+  backend is deployed manually (pm2).
 
 ## Recent changes (2026-06-26 — self-test / refactor pass 1)
 - See `tests/SELF_TEST_REPORT.md` for the full scorecard. Added a runnable unit suite (`npm test` → 79/79).

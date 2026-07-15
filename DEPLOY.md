@@ -8,8 +8,9 @@ Browser ──HTTPS──> Cloudflare DNS (pulse.nathanielbuilds.cc)
                        │
                        ▼
                  VPS :443  Caddy (reverse proxy + TLS)
-                       ├── /api/*, /health/*  ──> 127.0.0.1:3000  (Express backend, tsx)
-                       └── everything else    ──> 127.0.0.1:3001  (Next.js frontend)
+                       ├── /api/*, /health/*, /query, /webhook/*,      ──> 127.0.0.1:3000  (Express backend, tsx)
+                       │   /dashboard/*, /webchat/* (+ transcribe/…)
+                       └── everything else                             ──> 127.0.0.1:3001  (Next.js frontend)
                                    │
                    SQLite (local file) + MongoDB Atlas + z.ai GLM
 ```

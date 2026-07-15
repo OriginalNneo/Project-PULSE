@@ -527,6 +527,17 @@ Citizen (web / app / Telegram)
 
 The chatbot's per-turn analysis (emotion, confidence %, urgency) drives the CPF Queries Dashboard cards. Conversation + AI context window persist in the document store (`chat_sessions`, `cso_escalations` collections), so the officer sees full context on pickup.
 
+### Web "Text Us" channel (`web:` prefix)
+
+A third live channel alongside Telegram (`tg:`) and WhatsApp (`wa:`): an in-browser chat that reaches the **same** inbound pipeline, queue, and officer dashboard. Because the citizen's browser holds no socket to the backend, the officer→citizen direction uses **short-polling** over a per-session in-memory bus (`src/adapters/web/bus.ts`), mirroring the single-instance officer-registry `Map` (swap for Redis pub/sub to scale out).
+
+- **Handoff from the portal chatbot** — the `/cpf` PULSE widget shows a **"talk to a real person"** button only when the citizen explicitly asks or the query is personal (`intent === "personal_data"`). It calls `POST /webchat/:sessionId/connect { conversationHistory, language }`, which escalates as `web:<sessionId>` **carrying the chatbot conversation as the case history/summary** (via `escalateUser`'s optional `seedHistory`), then navigates to the phone-styled Text Us page `/textus?s=<sessionId>`.
+- **Live relay** — the Text Us page `POST /webchat/:sessionId { text }` runs `processInbound` (relays to the assigned officer once a case is active); officer replies (`POST /dashboard/send/:id`) and the resolve/CSAT message are pushed onto the bus and drained by `GET /webchat/:sessionId/poll?since=<cursor>`. Routes live in `src/gateway/webchat.ts` (`makeWebChannel`), mounted unauthenticated at `/webchat` (the UUID sessionId is the capability). `dashboard.ts` / `inbound.ts` / `session/manager.ts` all branch on the `web:` prefix. The dashboard labels these cases **"Text Us (Web)"** and web bot replies render lightweight markdown (bold/bullets).
+
+### Officer compliance guard (dashboard)
+
+Officers must never disclose a member's private data by chat. In `CpfDashboard.jsx`, a client-side check runs **as the officer types**: it flags account amounts written in any form — `$12,430`, `66K`, `66 thousand`, `66,000`, contiguous 5+ digits, **4-digit balances** (excluding years), **spaced/dashed** digits (`6 6 0 0 0`), and **arithmetic** disguises (`60000+6000`, `6 x 10000`) — plus **NRIC/FIN** identifiers, and the member's own known figures. When flagged, the send is blocked with a live red warning. The public `1800-227-1188` hotline, years (1900–2099), and ages are allow-listed. (Heuristic/instant; a server-side semantic backstop at send-time is the robust follow-up.)
+
 ### New collections (document store)
 
 `chat_sessions` — chatbot conversations + context window. `cso_escalations` — escalations surfaced to the CCU. `cpf_guiding_questions` — curated guiding-question sets (see "Guiding Questions" below).

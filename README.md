@@ -842,15 +842,34 @@ Done. Zero existing service code was touched.
 
 ## Key Features
 
-### Live Implementation — Telegram CPF Assistant
-The running prototype is a multilingual **Telegram bot** for CPF Board enquiries (full detail in [CONTEXT.md](./CONTEXT.md)):
+### Live Implementation — Multi-Channel CPF Assistant
+The running prototype is a multilingual CPF Board assistant reachable over **three channels** — a
+**Telegram bot**, **WhatsApp**, and an in-browser **"Text Us" web chat** — all feeding one shared
+inbound pipeline and one live **CCU officer dashboard** (full detail in [CONTEXT.md](./CONTEXT.md)):
 - **RAG answers** grounded in a MongoDB CPF knowledge base, with citations and a deterministic fallback.
-- **Government-standard formatting** — concise, scannable, front-loaded answers (GOV.UK / Singapore SGDS), generated **natively** in the user's language (English, Mandarin, Malay, Tamil, Hindi, Malayalam, Punjabi, Singlish), with a GLM translation fallback for relay/UI.
+- **Government-standard formatting** — concise, scannable, front-loaded answers (GOV.UK / Singapore SGDS), generated **natively** in the user's language (English, Mandarin, Malay, Tamil, Hindi, Malayalam, Punjabi, Singlish), with a GLM translation fallback for relay/UI. Web replies render lightweight markdown (bold, bullets).
 - **Interactive guiding questions** — for broad, personal questions the bot asks a few short questions (buttons or typed), then tailors the answer.
 - **Emotion-driven tone** — replies soften (warmer, less formal, empathy-first) for upset callers to reduce escalation, without dropping any facts. Tone adapts to the **trajectory** of the conversation, not just the latest message: as a caller gets angrier across turns the bot gets steadily more soothing (it only ever raises warmth, never strips the answer).
-- **Human escalation** — complex / personal / distressed cases hand off to a CCU officer via a live dashboard, with two-way translated relay.
+- **Human escalation** — complex / personal / distressed cases hand off to a CCU officer via a live dashboard, with two-way translated relay. On the web, a contextual **"talk to a real person"** button (shown only on explicit request or a personal-data query) carries the chatbot conversation into the case and continues it live on the Text Us page. See [CCU Officer Dashboard & Text Us Web Channel](#ccu-officer-dashboard--text-us-web-channel).
 - **Voice** — speech-to-text in, text-to-speech out.
 - **Satisfaction rating** — when a chat ends (officer closes the case, the customer signals they're done, or `/end`), the bot asks for a **1–5 ⭐ rating** and resets the chat; sessions left idle for 24h reset automatically.
+
+### CCU Officer Dashboard & Text Us Web Channel
+A single officer dashboard (`/dashboard`) serves all three channels; each citizen is identified by a
+channel-prefixed id (`tg:`, `wa:`, `web:`) and outbound replies are routed back to the right channel.
+- **Text Us web channel** — the CPF portal chatbot (`/cpf`) can hand a citizen to a human. Clicking the
+  button escalates over `POST /webchat/:sessionId/connect` (carrying the conversation as the case
+  summary/history), then opens the phone-styled Text Us page (`/textus?s=…`). Citizen messages relay to
+  the officer; officer replies stream back via short-poll (`GET /webchat/:sessionId/poll`). The web
+  channel is an in-memory per-session bus (`src/adapters/web/bus.ts`) — the same single-instance pattern
+  as the officer registry; swap for Redis pub/sub to scale out.
+- **Live dashboard** — priority-sorted queue, per-message emotion trajectory, on-demand translation, and
+  real-time updates over the `/dashboard/ws` WebSocket.
+- **Compliance guard** — officers can never disclose a member's private data by chat. As the officer
+  types, a client-side check flags account amounts (in any form — `$12,430`, `66K`, `66 thousand`,
+  `66,000`, spaced/`6 6 0 0 0`, arithmetic like `60000+6000`) and personal identifiers (NRIC/FIN); the
+  send is blocked and a red warning shown in real time. The public `1800-227-1188` hotline, years, and
+  ages are allow-listed.
 
 *The features below describe the broader PULSE framework vision; the bot above is the implemented slice.*
 
@@ -859,6 +878,8 @@ The running prototype is a multilingual **Telegram bot** for CPF Board enquiries
 - A/B testing framework for readability and engagement optimisation.
 
 ### Multi-Channel Delivery
+- **Conversational channels (live)** — **Telegram**, **WhatsApp**, and the in-browser **Text Us web
+  chat**, all sharing one inbound pipeline, escalation flow, and officer dashboard (see above).
 - **Physical Mail** — redesigned large-print layouts with QR codes and simplified call-to-action.
 - **Digital (In-App / Web)** — high-contrast, screen-reader-friendly interfaces with text-to-speech.
 - **SMS** — simplified summaries with hotline prompts (no clickable links).

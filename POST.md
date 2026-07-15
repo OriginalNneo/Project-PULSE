@@ -21,8 +21,9 @@ Config is overridable via env: `POST_BACKEND` (`http://127.0.0.1:3000`), `POST_F
 | **4 — Backend ↔ Frontend** | Through the Next proxy: `GET :3001/api/v1/adaptive-local/health` returns valid JSON (`status: "ok"`). (Was `/api/v1/officer/dashboard` until the dead officer surface was deleted.) | FAIL |
 | **5 — Dashboard live channel** | WebSocket `ws://127.0.0.1:3000/dashboard/ws` opens. | FAIL |
 | **6 — Telegram** | `getMe` (token valid). `getWebhookInfo` **must list `callback_query`** — if missing, **auto re-register** the webhook with `["message","edited_message","callback_query"]`. If `TELEGRAM_OFFICER_CHAT_ID` set, send a self-test message and confirm `message_id`. | FAIL getMe / webhook repair; WARN send |
-| **7 — Verdict** | PASS/WARN/FAIL tally; exit code. | — |
-| **8 — Docs** | Reminder to update `CONTEXT.md` / `AGENTS.md` / `MEMORY.md` for any change. | — |
+| **7 — Web Text Us channel** | `POST /webchat/<uuid>/connect` → `{ok:true}`; `GET /webchat/<uuid>/poll?since=0` returns the "connected to a CCU officer" confirmation. Confirms the `web:` channel is mounted and the poll bus works. Also `GET <public>/webchat/<uuid>/poll` == 200 (Caddy proxies `/webchat/*`). | FAIL local; WARN public |
+| **8 — Verdict** | PASS/WARN/FAIL tally; exit code. | — |
+| **9 — Docs** | Reminder to update `CONTEXT.md` / `AGENTS.md` / `MEMORY.md` for any change. | — |
 
 ## Why these checks exist (lessons baked in)
 
