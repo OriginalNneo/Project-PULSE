@@ -259,7 +259,23 @@ function PulseWidget() {
   const [lang,setLang] = useState("en");
   const [busy,setBusy] = useState(false);
   const [err,setErr]   = useState<string|null>(null);
+  const [connecting,setConnecting] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+
+  // Hand off to a human CCU officer: escalate carrying this conversation as context, then
+  // open the Text Us page bound to the same web session so the chat continues live there.
+  async function connectOfficer() {
+    if (connecting) return;
+    setConnecting(true);
+    const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await fetch(`${API_BASE}/webchat/${sessionId}/connect`,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({conversationHistory:msgs,language:lang})});
+    } catch { /* proceed anyway — the Text Us page can still resume this session */ }
+    window.location.href = `/textus?s=${encodeURIComponent(sessionId)}`;
+  }
 
   async function send() {
     const t = text.trim(); if(!t||busy) return;
@@ -304,6 +320,11 @@ function PulseWidget() {
             {busy&&<div style={{alignSelf:"flex-start",background:CPF.white,borderRadius:"12px 12px 12px 3px",padding:"9px 14px",fontSize:18,letterSpacing:3,color:"#bbb",boxShadow:"0 1px 3px rgba(0,0,0,.08)"}}>···</div>}
             {err&&<p style={{color:"#c00",fontSize:12,textAlign:"center"}}>{err}</p>}
           </div>
+          <div style={{flexShrink:0,padding:"8px 11px",borderTop:`1px solid ${CPF.border}`,background:CPF.white}}>
+            <button onClick={()=>void connectOfficer()} disabled={connecting} style={{width:"100%",border:`1.5px solid ${CPF.teal}`,background:connecting?"#e6efee":CPF.white,color:CPF.teal,borderRadius:6,padding:"8px 10px",fontSize:12.5,fontWeight:700,cursor:connecting?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              <span aria-hidden="true">👤</span>{connecting?"Connecting you to an officer…":"Talk to a CPF officer"}
+            </button>
+          </div>
           <div style={{flexShrink:0,padding:"9px 11px",borderTop:`1px solid ${CPF.border}`,display:"flex",gap:8,background:CPF.white}}>
             <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Type your question…" rows={2} disabled={busy}
               style={{flex:1,resize:"none",border:`1.5px solid ${CPF.border}`,borderRadius:6,padding:"7px 9px",fontSize:13,fontFamily:FONT,outline:"none"}} />
@@ -343,12 +364,12 @@ export default function CpfPage() {
 
   return (
     <>
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         html{scroll-behavior:smooth;}
         body{background:${CPF.bg};font-family:${FONT};}
-      `}</style>
+      ` }} />
 
       <BackHomeButton />
 
@@ -472,8 +493,11 @@ export default function CpfPage() {
             <h2 style={{fontSize:28,fontWeight:800,color:CPF.teal,marginBottom:8,letterSpacing:"-0.5px"}}>{t.tTitle}</h2>
             <div style={{width:56,height:5,background:CPF.lime,borderRadius:3,marginBottom:32}} />
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:20}}>
-              {TOPICS.map(tp=>(
-                <div key={tp.id} style={{background:CPF.white,borderRadius:10,border:`1px solid ${CPF.border}`,padding:"28px 24px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,.06)",transition:"box-shadow .2s"}}
+              {TOPICS.map(tp=>{
+                const clickable = tp.id === "housing";
+                return (
+                <div key={tp.id} onClick={clickable ? ()=>{ window.location.href = "/cpf/housing"; } : undefined}
+                  style={{background:CPF.white,borderRadius:10,border:`1px solid ${CPF.border}`,padding:"28px 24px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,.06)",transition:"box-shadow .2s",cursor:clickable?"pointer":"default"}}
                   onMouseEnter={e=>(e.currentTarget as HTMLDivElement).style.boxShadow="0 4px 16px rgba(0,0,0,.12)"}
                   onMouseLeave={e=>(e.currentTarget as HTMLDivElement).style.boxShadow="0 1px 4px rgba(0,0,0,.06)"}>
                   <div style={{width:64,height:64,borderRadius:"50%",background:tp.light,color:tp.color,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
@@ -485,7 +509,7 @@ export default function CpfPage() {
                     <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:.8,color:CPF.light,marginBottom:12}}>Related information</p>
                     <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
                       {tp.links.map(lk=>(
-                        <button key={lk} onClick={()=>demo(`Opening: ${lk}`)}
+                        <button key={lk} onClick={e=>{e.stopPropagation(); clickable ? (window.location.href = "/cpf/housing") : demo(`Opening: ${lk}`);}}
                           style={{background:CPF.white,color:tp.color,border:`1.5px solid ${tp.color}`,borderRadius:20,padding:"6px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:FONT,transition:"background .15s,color .15s"}}
                           onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background=tp.color;(e.currentTarget as HTMLButtonElement).style.color=CPF.white;}}
                           onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background=CPF.white;(e.currentTarget as HTMLButtonElement).style.color=tp.color;}}>
@@ -495,7 +519,8 @@ export default function CpfPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>

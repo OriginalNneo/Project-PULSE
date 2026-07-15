@@ -1041,7 +1041,7 @@ async function relayToOfficer(
   // top-level emotion so the card reflects how the citizen feels right now.
   const emotionPayload = {
     userId,
-    channel: userId.startsWith("tg:") ? "tg" : "wa",
+    channel: userId.startsWith("tg:") ? "tg" : userId.startsWith("web:") ? "web" : "wa",
     emotion_label: scored.emotion_label,
     emotion_score: scored.emotion_score,
     message_preview: messageText.slice(0, 80),
@@ -1067,7 +1067,13 @@ async function relayToOfficer(
   }).catch(() => null);
 }
 
-export async function escalateUser(channel: InboundChannel, userId: string): Promise<void> {
+export async function escalateUser(
+  channel: InboundChannel,
+  userId: string,
+  // Web channel holds its conversation in the browser, not the backend's per-user ring buffer.
+  // When provided, this is used as the case chat_history/summary source instead of getHistory().
+  seedHistory?: Array<{ role: string; content: string; ts?: string }>,
+): Promise<void> {
   // Prevent duplicate queue entries — if user already has an active case, just confirm
   const existing = await getQueue().catch(() => null);
   const alreadyQueued = existing?.find(
@@ -1099,7 +1105,11 @@ export async function escalateUser(channel: InboundChannel, userId: string): Pro
     : undefined;
 
   await upsertUserPrefs({ ...(prefs ?? { userId, preferred_lang: "en", voice_enabled: false, speech_rate: 1.0, accessibility_mode: "standard" }), pendingOfficerOffer: false, pendingVoiceUnclear: false }).catch(() => null);
-  const chatHistory = getHistory(userId);
+  const chatHistory = seedHistory && seedHistory.length
+    ? seedHistory
+        .filter((m) => m?.content?.trim())
+        .map((m) => ({ role: m.role === "user" ? "user" : "agent", content: m.content, ts: m.ts ?? new Date().toISOString() }))
+    : getHistory(userId);
   clearHistory(userId);
   await doEscalate(channel, userId, sessionId, summary, "", lang, emotion, chatHistory, presetSummary);
 }

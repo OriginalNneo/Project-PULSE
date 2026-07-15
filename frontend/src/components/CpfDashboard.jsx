@@ -23,8 +23,25 @@ const sentFromEmotion = (label) => EMO_TO_SENT[String(label || '').toLowerCase()
 const LANG_NAME = { en: 'English', zh: 'Mandarin', ms: 'Malay', ta: 'Tamil', hi: 'Hindi', ml: 'Malayalam', pa: 'Punjabi' };
 const urgencyFromScore = (s) => { const n = s > 1 ? s : s * 100; return n >= 66 ? 'urgent' : n >= 33 ? 'medium' : 'low'; }; // scores are 0–100
 const minsSince = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? 0 : Math.max(0, Math.round((Date.now() - t) / 60000)); };
-const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : String(uid).startsWith('wa:') ? 'WhatsApp' : 'Member');
-const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
+const channelName = (uid) => (String(uid).startsWith('tg:') ? 'Telegram' : String(uid).startsWith('wa:') ? 'WhatsApp' : String(uid).startsWith('web:') ? 'Text Us (Web)' : 'Member');
+const deriveName = (uid) => { const id = String(uid).replace(/^(tg:|wa:|web:)/, ''); return `${channelName(uid)} user ${id.slice(-4) || id}`; };
+
+// Compliance guard: officers must never disclose a member's CPF account figures over chat.
+// Returns true if the outgoing reply contains a dollar amount, or a bare number matching one
+// of this case's known balances / retirement figures (OA, MA, RA, monthly payout, shortfall).
+function containsAccountAmount(text, oc) {
+  if (!text) return false;
+  // In a CPF officer chat any "$…" figure is, in practice, an account/scheme amount → block.
+  if (/\$\s?\d/.test(text)) return true;
+  // Also catch bare numbers that exactly match the member's known figures.
+  const figures = new Set();
+  const add = (v) => { const d = String(v ?? '').replace(/[^\d]/g, ''); if (d.length >= 3) figures.add(d); };
+  if (oc && oc.balances) { add(oc.balances.oa); add(oc.balances.ma); add(oc.balances.ra); }
+  if (oc && oc.retirement) { add(oc.retirement.payout); add(oc.retirement.shortfall); }
+  if (figures.size === 0) return false;
+  const nums = (text.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[^\d]/g, ''));
+  return nums.some((n) => figures.has(n));
+}
 
 // Realistic mock identities — the backend queue carries none, so each case is assigned
 // one deterministically (stable per case) to fill the profile + chat header. Display only.
@@ -114,10 +131,10 @@ const PEOPLE = (function () {
     { id: 'lim', name: 'Lim Hui Ying', sal: 'Ms Lim', nric: 'S7345678D', age: 52, phone: '+65 9456 7890', dob: '09 Feb 1974', address: 'Blk 250 Ang Mo Kio Ave 4, #05-117', urgency: 'low', sentiment: 'happy', subject: 'CPF nomination update', preview: 'Would like to update her beneficiary nomination after a change in family circumstances\u2026', mins: 10,
       balances: { oa: '$41,200', ma: '$28,900', ra: '$62,100' },
       summary: 'User would like to update her CPF nomination following a change in family circumstances.', q: 'How do I update my CPF nomination?' },
-    { id: 'ahamed', name: 'Ahamed Faizal', sal: 'Mr Faizal', nric: 'S8456789E', age: 38, phone: '+65 9567 8901', dob: '17 Sep 1987', address: 'Blk 501 Jurong West St 51, #09-44', language: 'Malay', urgency: 'low', sentiment: 'sad', subject: 'Housing withdrawal for HDB flat', preview: 'Concerned a CPF housing withdrawal may have been wrongly processed for his new flat\u2026', mins: 18,
+    { id: 'ahamed', name: 'Ahamed Faizal', sal: 'Mr Faizal', nric: 'S8456789E', age: 38, phone: '+65 9567 8901', dob: '17 Sep 1987', address: 'Blk 501 Jurong West St 51, #09-44', language: 'Malay', urgency: 'urgent', sentiment: 'sad', subject: 'Housing withdrawal for HDB flat', preview: 'Concerned a CPF housing withdrawal may have been wrongly processed for his new flat\u2026', mins: 18,
       balances: { oa: '$3,180', ma: '$19,540', ra: '$24,300' }, flags: ['Low OA balance after recent housing withdrawal'],
       summary: 'User is concerned that a CPF housing withdrawal for his new HDB flat may have been processed incorrectly.', q: 'I think too much was deducted from my OA, can you check?' },
-    { id: 'lee', name: 'Lee Cheng Wei', sal: 'Mr Lee', nric: 'S9156782F', age: 35, phone: '+65 9678 9012', dob: '02 Jan 1991', address: 'Blk 19 Telok Blangah Cres, #07-30', urgency: 'medium', sentiment: 'neutral', subject: 'MediShield Life premium', preview: 'Disputes a MediShield Life premium deduction he says was charged twice this year\u2026', mins: 25,
+    { id: 'lee', name: 'Lee Cheng Wei', sal: 'Mr Lee', nric: 'S9156782F', age: 35, phone: '+65 9678 9012', dob: '02 Jan 1991', address: 'Blk 19 Telok Blangah Cres, #07-30', urgency: 'urgent', sentiment: 'neutral', subject: 'MediShield Life premium', preview: 'Disputes a MediShield Life premium deduction he says was charged twice this year\u2026', mins: 25,
       balances: { oa: '$66,400', ma: '$14,870', ra: '$20,110' }, flags: ['Possible duplicate premium deduction \u2014 under review'],
       summary: 'User disputes a MediShield Life premium deduction which he believes was charged twice this year.', q: 'Why was I charged the MediShield premium twice?' },
     { id: 'thomas', name: 'Thomas Lee', sal: 'Mr Lee', nric: 'S7267890G', age: 49, phone: '+65 9789 0123', dob: '28 Jun 1976', address: 'Blk 333 Clementi Ave 2, #12-19', urgency: 'urgent', sentiment: 'frustrated', subject: 'Self-employed MediSave shortfall', preview: 'Received a MediSave contribution shortfall notice and is upset about late-payment interest\u2026', mins: 30,
@@ -206,12 +223,12 @@ const fmtDuration = (ms) => {
 };
 const mask = (n) => (n ? n[0] + '\u2022\u2022\u2022\u2022' + n.slice(-3) : '');
 const colorFor = (u) => (u === 'urgent' ? '#ca2424' : u === 'medium' ? '#c98a1e' : '#1a981e');
-const tintFor = (u) => (u === 'urgent' ? 'rgba(202,36,36,.10)' : u === 'medium' ? 'rgba(201,138,30,.14)' : 'rgba(26,152,30,.12)');
-const labelFor = (u) => (u === 'urgent' ? 'Urgent' : u === 'medium' ? 'Medium' : 'Low');
 const urgRank = (u) => (u === 'urgent' ? 3 : u === 'medium' ? 2 : 1);
 const SENT = { angry: 4, frustrated: 4, sad: 3, confused: 2, neutral: 1, happy: 0 };
 const sentRank = (s) => (SENT[s] != null ? SENT[s] : 1);
+const sentColor = (s) => (sentRank(s) >= 4 ? '#ca2424' : sentRank(s) >= 2 ? '#c98a1e' : '#1a981e');
 const mouthFor = (s) => (({ happy: 'M 9 19 Q 16 25 23 19', neutral: 'M 10 21 L 22 21', sad: 'M 9 23 Q 16 17 23 23', angry: 'M 9 23 Q 16 18 23 23', frustrated: 'M 10 23 Q 16 18 22 23', confused: 'M 9 22 Q 12 19 15 22 Q 18 25 22 21' })[s] || 'M 10 21 L 22 21');
+const sentLabel = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
 
 function botAnswer(subj) {
   const s = (subj || '').toLowerCase();
@@ -252,6 +269,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
   const [draft, setDraft] = useState('');
+  const [amountBlocked, setAmountBlocked] = useState(false); // account-amount guard tripped
   const [typing, setTyping] = useState(false);
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
@@ -402,6 +420,14 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     const id = openChatId;
     const text = (draft || '').trim();
     if (!text || !id) return;
+    // Account-amount guard — never let a member's CPF balances/amounts go out over chat.
+    // Auto-clear the compose box and surface the red warning instead of sending.
+    if (containsAccountAmount(text, people[id])) {
+      setDraft('');
+      setAmountBlocked(true);
+      return;
+    }
+    setAmountBlocked(false);
     // Optimistic append for instant feedback; the backend persists it to chat_history,
     // so the next refetch shows it interleaved chronologically (no duplicate).
     setThreads((t) => ({ ...t, [id]: [...(t[id] || []), { from: 'officer', text }] }));
@@ -414,7 +440,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         body: JSON.stringify({ message: text, officerId: OFFICER_ID }),
       });
     } catch { /* keep the optimistic message even if the send fails */ }
-  }, [openChatId, draft]);
+  }, [openChatId, draft, people]);
 
   /* ---- derived view data ---- */
 
@@ -445,7 +471,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     // customer present. Demo proxy: the case age (no per-message timestamps in mock data).
     const custMins = p.mins ?? 0;
     return {
-      id, name: p.name, urgency: p.urgency,
+      id, name: p.name, urgency: p.urgency, sentiment: p.sentiment,
       preview: (last ? last.text : '').replace(/\s+/g, ' ').slice(0, 64),
       isOpen: id === openChatId,
       showAlert: p.urgency === 'urgent',
@@ -513,7 +539,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     : { text: 'On fire! 🔥', color: '#059669' };
 
   const isIncoming = tab === 'incoming';
-  const FILTERS = [['all', 'All'], ['urgent', 'Urgent'], ['medium', 'Medium'], ['low', 'Low']];
+  const FILTERS = [['all', 'All'], ['urgent', 'Urgent!']];
 
   /* --------------------------------------------------------------- view --- */
 
@@ -533,6 +559,9 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         .cpf-scroll::-webkit-scrollbar-thumb{background:rgba(0,0,0,.16);border-radius:8px}
         .cpf-scroll::-webkit-scrollbar-track{background:transparent}
         .cpf-input::placeholder{color:#a3a3a3}
+        .cpf-emo{position:relative;display:flex}
+        .cpf-emo-tip{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(-4px);background:#1c1c1c;color:#fff;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:5}
+        .cpf-emo:hover .cpf-emo-tip{opacity:1;transform:translateX(-50%) translateY(0)}
       `}</style>
 
       <NavRail
@@ -549,7 +578,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
       {/* ---------------- INCOMING ---------------- */}
       {isIncoming && (
-        <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto', padding: '48px 44px 64px' }}>
+        <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto', scrollbarGutter: 'stable', padding: '48px 44px 64px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 24 }}>
             <StatCard value={String(active.length)} label="OPEN CHATS" sub={openStatus.text} subColor={openStatus.color} accent="#0f9d94" icon={<StatIconChats color="#0f9d94" />} />
             <StatCard value={String(incoming.length)} label="INCOMING INQUIRIES" sub={incomingStatus.text} subColor={incomingStatus.color} accent="#d97706" icon={<StatIconInbox color="#d97706" />} />
@@ -589,19 +618,29 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
               {queries.map((p) => (
                 <div key={p.id} className="cpf-card-hover" onClick={() => accept(p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                  <div style={{ height: 6, background: colorFor(p.urgency) }} />
+                  <div style={{ height: 6, background: sentColor(p.sentiment) }} />
                   <div style={{ padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>{p.name}</span>
-                      <svg viewBox="0 0 32 32" width="40" height="40" style={{ flex: 'none' }}>
-                        <circle cx="16" cy="16" r="14.4" fill="none" stroke={colorFor(p.urgency)} strokeWidth="1.6" />
-                        <circle cx="11" cy="13" r="1.7" fill={colorFor(p.urgency)} />
-                        <circle cx="21" cy="13" r="1.7" fill={colorFor(p.urgency)} />
-                        <path d={mouthFor(p.sentiment)} fill="none" stroke={colorFor(p.urgency)} strokeWidth="1.7" strokeLinecap="round" />
-                      </svg>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
+                        {p.urgency === 'urgent' && (
+                          <span style={{ fontSize: 26, fontWeight: 800, color: '#ca2424', lineHeight: 1 }}>!</span>
+                        )}
+                        <div className="cpf-emo" style={{ flex: 'none' }}>
+                          <div className="cpf-emo-tip">
+                            {sentLabel(p.sentiment)}
+                            <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '5px solid #1c1c1c' }} />
+                          </div>
+                          <svg viewBox="0 0 32 32" width="40" height="40" style={{ flex: 'none' }}>
+                            <circle cx="16" cy="16" r="14.4" fill="none" stroke={sentColor(p.sentiment)} strokeWidth="1.6" />
+                            <circle cx="11" cy="13" r="1.7" fill={sentColor(p.sentiment)} />
+                            <circle cx="21" cy="13" r="1.7" fill={sentColor(p.sentiment)} />
+                            <path d={mouthFor(p.sentiment)} fill="none" stroke={sentColor(p.sentiment)} strokeWidth="1.7" strokeLinecap="round" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                     <span style={{ fontStyle: 'italic', fontSize: 14, color: '#8a8a8a', letterSpacing: '1px' }}>{mask(p.nric)}</span>
-                    <span style={{ display: 'inline-block', alignSelf: 'flex-start', padding: '3px 11px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase', color: colorFor(p.urgency), background: tintFor(p.urgency) }}>{labelFor(p.urgency)}</span>
                     <span style={{ fontSize: 16, fontWeight: 600, marginTop: 2, lineHeight: 1.2 }}>{p.subject}</span>
                     <span style={{ fontSize: 13, fontWeight: 400, color: '#667085', lineHeight: 1.45 }}>{p.preview}</span>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 12 }}>
@@ -655,11 +694,11 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
             <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto' }}>
               {(chatView === 'inactive' ? idleChats : liveChats).map((row) => (
                 <div key={row.id} onClick={() => open(row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : (row.idle ? 'rgba(201,138,30,0.05)' : 'rgba(12,134,132,0.03)'), boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: colorFor(row.urgency), opacity: row.idle ? .45 : 1 }} />
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: sentColor(row.sentiment), opacity: row.idle ? .45 : 1 }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: row.idle ? '#555' : '#1c1c1c' }}>{row.name}</span>
                     {row.showAlert && !row.idle && (
-                      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#ca2424" strokeWidth="2.4" strokeLinecap="round" style={{ flex: 'none' }}><path d="M12 4v9" /><path d="M12 18.2v.2" /></svg>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: '#ca2424', lineHeight: 1, flex: 'none' }}>!</span>
                     )}
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 300, color: row.idle ? '#777' : '#444', display: 'block', marginTop: 4, lineHeight: 1.35, maxHeight: 36, overflow: 'hidden' }}>{row.preview}</span>
@@ -742,11 +781,17 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                   <span>🌐</span><span>{`Type in English — replies are auto-translated to ${oc.language} before sending.`}</span>
                 </div>
               )}
+              {amountBlocked && (
+                <div role="alert" style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: '#fee4e2', borderTop: '1px solid #f5b5ad', color: '#912018', fontSize: 13, fontWeight: 600 }}>
+                  <span aria-hidden="true">🚫</span>
+                  <span>Do not send account balances or amounts via text. Your message was cleared for the member’s security.</span>
+                </div>
+              )}
               <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: '#f4f4f4', boxShadow: '0 -2px 5px rgba(0,0,0,.1)' }}>
                 <div className="cpf-icon-btn" style={{ width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none' }}>
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                 </div>
-                <input className="cpf-input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }} placeholder="Type a message…" style={{ flex: 1, border: 'none', outline: 'none', background: '#fff', borderRadius: 24, padding: '14px 20px', fontSize: 15, fontFamily: 'inherit', boxShadow: 'inset 0 0 0 1px #ddd' }} />
+                <input className="cpf-input" value={draft} onChange={(e) => { setDraft(e.target.value); if (amountBlocked) setAmountBlocked(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } }} placeholder="Type a message…" style={{ flex: 1, border: 'none', outline: 'none', background: '#fff', borderRadius: 24, padding: '14px 20px', fontSize: 15, fontFamily: 'inherit', boxShadow: `inset 0 0 0 ${amountBlocked ? '2px #d92d20' : '1px #ddd'}` }} />
                 <div className="cpf-send-btn" onClick={send} style={{ width: 50, height: 50, borderRadius: '50%', background: '#0a6160', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: 'none', boxShadow: '0 2px 6px rgba(10,97,96,.4)' }}>
                   <svg viewBox="0 0 24 24" width="23" height="23" fill="#fff"><path d="M3 20l18-8L3 4v6.2l12 1.8-12 1.8z" /></svg>
                 </div>

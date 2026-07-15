@@ -13,6 +13,7 @@ import { webhookRoutes } from "./webhook.js";
 import { telegramRoutes } from "./telegram.js";
 import { deployRoutes } from "./deploy.js";
 import { dashboardRoutes } from "./dashboard.js";
+import { webchatRoutes } from "./webchat.js";
 import { requireAuth, rateLimiter, errorHandler, requestId, attachTraceContext } from "../shared/middleware/index.js";
 import { createServiceLogger } from "../shared/logger.js";
 import { correspondenceRoutes } from "../services/correspondence/routes.js";
@@ -130,6 +131,10 @@ app.use("/webhook", telegramRoutes);
 
 // CCU officer dashboard REST endpoints — internal tool, no JWT required
 app.use("/dashboard", dashboardRoutes);
+
+// Text Us web channel — citizen-facing chat relayed to the officer dashboard.
+// Unauthenticated; the per-session UUID is the capability (same posture as the webhooks).
+app.use("/webchat", webchatRoutes);
 
 // ── Shared schema aliases (imported from src/shared/types/schemas.ts) ──────────
 const DialectEnum = DialectSchema;
