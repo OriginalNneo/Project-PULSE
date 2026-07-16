@@ -152,14 +152,11 @@ async function officerButtonFor(lang: Lang): Promise<ChannelButton[][]> {
   return [[{ label: `🧑‍💼 ${label}`, callbackId: "connect_officer" }]];
 }
 
-const VOICE_CLARITY_PROMPT =
-  'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. The message may be in ANY language — English, Singlish, Mandarin, Malay, Tamil, Hindi, or a mix — and a non-English message is just as valid. Decide if a real person deliberately said it: a question, request, greeting, short answer, or even a mic test ("testing one two three", "hello can you hear me") counts as CLEAR. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random word salad, heavily repeated fragments, or a stock caption speech-to-text invents for near-silence (e.g. "thank you for watching", "uh huh", "."). When in doubt, answer CLEAR. Reply with ONE word: CLEAR or UNCLEAR.';
-
 // Stock captions Whisper invents for silence/noise — artefacts of its YouTube training
 // data. Matched deterministically against the WHOLE transcript (a real question that merely
 // contains one of these phrases is unaffected). Kept to unambiguous video-caption phrases;
 // things a person might actually say ("thank you", "uh huh") are NOT listed — those are
-// answered, or caught by the sparse-audio LLM check below.
+// answered.
 const STT_STOCK_HALLUCINATIONS = new Set([
   "thank you for watching",
   "thanks for watching",
@@ -183,45 +180,22 @@ function looksLikeSttHallucination(text: string): boolean {
   return words.length >= 4 && new Set(words).size === 1;
 }
 
-// True if a voice transcription looks like it came from an unclear/muffled recording.
-// Uses the LLM with thinking disabled (~1-2s) so it judges the actual transcription.
-// Only consulted for suspicious transcripts (see the sparse-audio check at the call
-// site) — a flaky model answer must never be able to veto ordinary clear speech.
-async function transcriptionLooksUnclear(text: string): Promise<boolean> {
-  const t = text.trim();
-  let to: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const timeout = new Promise<string>((_, reject) => { to = setTimeout(() => reject(new Error("clarity timeout")), 8000); });
-    const out = await Promise.race([callHermes(VOICE_CLARITY_PROMPT, t, [], 100, false, { thinking: { type: "disabled" } }), timeout]);
-    return /unclear/i.test(out || "");
-  } catch (err) {
-    log.warn({ err: String(err) }, "voice clarity check failed — treating as clear");
-    return false;
-  } finally {
-    clearTimeout(to);
-  }
-}
-
-// Failure scenario reply: couldn’t make out the voice note (or the STT service is
-// down — that gets an honest "service busy", not a message blaming their recording).
-// Replies in the user’s language, with the "Connect to CPF Officer" button, and a
-// spoken (TTS) version.
-const VOICE_FAIL_MESSAGES = {
-  unclear: "I had trouble making out your voice message — please try recording again or type your question instead.",
-  noisy: "It sounds like there’s a lot of background noise where you are — could you move somewhere quieter, or just type your message instead?",
-  stt_down: "Sorry, our voice service is a little overloaded right now — please type your question instead, or try the voice note again in a few minutes.",
-} as const;
+// Failure scenario reply: STT failed or produced gibberish. One message for both —
+// the user asked for the honest "service overloaded" wording rather than anything
+// that blames their recording. Replies in the user’s language, with the "Connect to
+// CPF Officer" button, and a spoken (TTS) version.
+const VOICE_FAIL_MESSAGE =
+  "Our voice service is a little overloaded right now — please type your question instead, or try the voice note again in a few minutes.";
 
 async function sendUnclearVoiceReply(
   channel: InboundChannel,
   userId: string,
   lang: string,
   prefs: { speech_rate?: number; preferred_dialect?: string },
-  reason: keyof typeof VOICE_FAIL_MESSAGES = "unclear",
 ): Promise<void> {
   // Remember the last voice note was unclear so an escalation right after has context.
   await upsertUserPrefs({ userId, pendingVoiceUnclear: true }).catch(() => null);
-  let msg: string = VOICE_FAIL_MESSAGES[reason];
+  let msg: string = VOICE_FAIL_MESSAGE;
   if (lang !== "en") {
     const t = await translateText(msg, "en", lang).catch(() => null);
     if (t) msg = t.translated_text;
@@ -869,29 +843,16 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       }
     } catch (err) {
       log.error(err, "STT failed");
-      // The audio never got transcribed — a service outage, not the user's recording.
-      await sendUnclearVoiceReply(channel, userId, lang, prefs, "stt_down");
+      await sendUnclearVoiceReply(channel, userId, lang, prefs);
       return;
     }
-    // Unclear-voice detection — default is to ANSWER. Deterministic rejects only:
-    // empty/single-char transcript, an accidental-tap recording (<0.6s), or a stock
-    // Whisper silence-caption ("thank you for watching"). The LLM clarity check runs
-    // ONLY when the audio is suspiciously sparse — several seconds of speech yielding
-    // almost no text — so a flaky model answer can't veto ordinary clear speech.
-    // Chars-per-second is an English-rate heuristic: normal Mandarin runs ~3-5
-    // chars/sec and CJK/Indic scripts pack a sentence into a few characters, so
-    // dense-script transcripts are never treated as sparse.
-    const denseScript = /[㐀-䶿一-鿿぀-ヿ가-힯஀-௿ऀ-ॿ਀-੿ഀ-ൿ]/.test(messageText);
-    const tapAudio = msg.durationSec != null && msg.durationSec < 0.6;
-    const sparseAudio = msg.durationSec != null && msg.durationSec >= 2 && !denseScript
-      && messageText.length / msg.durationSec < 3;
-    if (
-      !messageText || messageText.length < 2 || tapAudio
-      || looksLikeSttHallucination(messageText)
-      || (sparseAudio && (await transcriptionLooksUnclear(messageText)))
-    ) {
-      log.info({ userId, messageText, durationSec: msg.durationSec }, "Voice message judged unclear — sending error + officer option");
-      await sendUnclearVoiceReply(channel, userId, lang, prefs, sparseAudio ? "noisy" : "unclear");
+    // Whisper's transcript is trusted — the ONLY reject is gibberish: an empty or
+    // single-character transcript, or a deterministic Whisper silence-artefact
+    // (stock caption / one fragment stuttered over and over). Everything else is
+    // answered, whatever the language, length or duration.
+    if (!messageText || messageText.length < 2 || looksLikeSttHallucination(messageText)) {
+      log.info({ userId, messageText, durationSec: msg.durationSec }, "Voice transcript is gibberish — sending error + officer option");
+      await sendUnclearVoiceReply(channel, userId, lang, prefs);
       return;
     }
   }

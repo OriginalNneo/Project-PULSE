@@ -35,5 +35,23 @@ module.exports = {
       out_file: "/var/log/pulse/frontend.out.log",
       error_file: "/var/log/pulse/frontend.err.log",
     },
+    {
+      // Local Whisper STT (faster-whisper, CPU). Primary speech-to-text — the backend
+      // only falls back to HF serverless when this is down. One-time setup:
+      //   python3 -m venv /opt/pulse-stt/venv
+      //   /opt/pulse-stt/venv/bin/pip install faster-whisper flask
+      name: "pulse-stt",
+      cwd: "/opt/project-pulse",
+      script: "deploy/stt-server.py",
+      interpreter: "/opt/pulse-stt/venv/bin/python",
+      env: {
+        STT_PORT: "3002",
+        STT_MODEL: "small",
+      },
+      max_restarts: 10,
+      restart_delay: 3000,
+      out_file: "/var/log/pulse/stt.out.log",
+      error_file: "/var/log/pulse/stt.err.log",
+    },
   ],
 };

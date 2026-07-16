@@ -70,15 +70,61 @@ function base64ToBytes(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
-// ── Speech-to-text (Whisper via HF) ───────────────────────────────────────────
+// ── Speech-to-text (local Whisper first, HF fallback) ─────────────────────────
+// HF serverless Whisper goes through hours-long stretches of 504s, so the primary
+// STT is a self-hosted faster-whisper service (deploy/stt-server.py, pm2 "pulse-stt")
+// that only depends on this box. HF stays as fallback for when the local service
+// is down (e.g. mid-redeploy).
+const LOCAL_STT_URL = process.env.LOCAL_STT_URL ?? "http://127.0.0.1:3002";
+// 2-core CPU inference — a long voice note can take ~20-30s; warm short notes ~2-5s.
+const LOCAL_STT_TIMEOUT_MS = parseInt(process.env.LOCAL_STT_TIMEOUT_MS ?? "", 10) || 60000;
 // Whisper cold-starts on HF serverless routinely exceed the default 30s timeout, which
 // used to abort the call and tell the citizen their (perfectly clear) audio couldn't be
 // understood. STT gets its own generous budget; warm calls still return in ~1-2s.
 const HF_STT_TIMEOUT_MS = parseInt(process.env.HF_STT_TIMEOUT_MS ?? "", 10) || 90000;
 
+async function localTranscribe(bytes: Uint8Array, mimeType: string): Promise<TranscribeResult | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LOCAL_STT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${LOCAL_STT_URL}/transcribe`, {
+      method: "POST",
+      headers: { "Content-Type": mimeType },
+      body: new Blob([bytes], { type: mimeType }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      log.warn({ status: res.status }, "Local STT returned error — falling back to HF");
+      return null;
+    }
+    const out = (await res.json()) as { text?: string; language?: string; confidence?: number };
+    // Empty text from local whisper means the audio really had no speech (its VAD
+    // trims silence) — return it rather than letting HF hallucinate a caption.
+    return {
+      text: (out.text ?? "").trim(),
+      language: out.language ?? "auto",
+      confidence: out.confidence ?? 0.9,
+    };
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, "Local STT unavailable — falling back to HF");
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function transcribeAudio(audioBase64: string, mimeType: string): Promise<TranscribeResult> {
+  const bytes = base64ToBytes(audioBase64);
+
+  const local = await localTranscribe(bytes, mimeType);
+  if (local) {
+    log.info({ mimeType, language: local.language, chars: local.text.length }, "Transcribed audio via local whisper");
+    if (!local.text) throw new ExternalServiceError("stt", "transcription returned empty text");
+    return local;
+  }
+
   log.info({ mimeType, model: STT_MODEL }, "Transcribing audio via HF");
-  const out = (await hfBinary(STT_MODEL, base64ToBytes(audioBase64), mimeType, { timeoutMs: HF_STT_TIMEOUT_MS, retries: 3 })) as { text?: string };
+  const out = (await hfBinary(STT_MODEL, bytes, mimeType, { timeoutMs: HF_STT_TIMEOUT_MS, retries: 3 })) as { text?: string };
   const text = (out?.text ?? "").trim();
   if (!text) throw new ExternalServiceError("hf", "transcription returned empty text");
   return { text, language: "auto", confidence: 0.9 };
