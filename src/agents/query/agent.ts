@@ -3,6 +3,7 @@ import type { Language, VulnerabilityTier } from "../../shared/types/index.js";
 import type { ConversationMessage, AgentResponse } from "../shared/types.js";
 import { createServiceLogger } from "../../shared/logger.js";
 import { callHermes } from "../../services/ai/llmClient.js";
+import { translateText } from "../../python-bridge/client.js";
 import { getQueryCache, writeQueryCache } from "../../db/proxy-client.js";
 import { groundingCheck } from "../guardian/agent.js";
 import { getPreviousSessionContext } from "./summariser.js";
@@ -103,11 +104,25 @@ export async function runQueryAgent(
   const query = lastMessage?.content ?? "";
   const language = ctx.language ?? "en";
 
-  const { intent, pipeline } = selectQueryPipeline(query);
+  // The knowledge base, intent keywords, and terminology glossary are all English —
+  // searching them with raw Chinese/Tamil/… text retrieved nothing, leaving the LLM
+  // to answer from a generic fallback page (hallucination-prone) and misclassifying
+  // intent (e.g. a zh balance query never became personal_data). Translate for
+  // retrieval only; the LLM still sees the user's original words below.
+  let searchQuery = query;
+  if (language !== "en" && query.trim()) {
+    const t = await translateText(query, language, "en").catch(() => null);
+    if (t?.translated_text?.trim()) {
+      searchQuery = t.translated_text;
+      log.info({ userId: ctx.userId, language }, "Query translated to English for retrieval");
+    }
+  }
+
+  const { intent, pipeline } = selectQueryPipeline(searchQuery);
 
   log.info({ userId: ctx.userId, intent, pipeline }, "Query pipeline selected");
 
-  const toolCtx: QueryToolContext = { language, tier: ctx.vulnerabilityTier, query };
+  const toolCtx: QueryToolContext = { language, tier: ctx.vulnerabilityTier, query: searchQuery };
 
   let state: QueryPipelineState = {
     query,

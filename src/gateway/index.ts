@@ -30,7 +30,7 @@ import { copilotRoutes } from "../services/copilot/routes.js";
 import { adaptiveLocalRoutes } from "../services/adaptive-local/index.js";
 import { runMainAgent } from "../agents/main/agent.js";
 import { analyzeEscalation } from "../agents/escalation/analyzer.js";
-import { detectEmotion, synthesizeSpeech } from "../python-bridge/client.js";
+import { detectEmotion, detectLanguage, synthesizeSpeech } from "../python-bridge/client.js";
 import { scoreEmotion } from "../agents/main/emotion.js";
 import { z } from "zod";
 import { ValidationError } from "../shared/errors.js";
@@ -248,8 +248,17 @@ app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
     ...conversationHistory.map((m) => ({ ...m, timestamp: m.timestamp ?? new Date().toISOString() })),
     { role: "user" as const, content: message, timestamp: new Date().toISOString() },
   ];
+  // The widgets send their language-picker value, but citizens type in whatever
+  // language they prefer. A confident detection of the typed message wins over the
+  // picker (script detection is deterministic for zh/ta/hi/ml/pa); short or ambiguous
+  // text keeps the picker choice. Mirrors the messaging channels' auto-detect.
+  let lang = language;
+  const detected = await detectLanguage(message).catch(() => null);
+  if (detected?.confident && (LanguageSchema.options as string[]).includes(detected.lang)) {
+    lang = detected.lang as typeof lang;
+  }
   const result = await runMainAgent(
-    { type: "query", messages, language },
+    { type: "query", messages, language: lang },
     resolveCtx(req),
   );
   // Language-independent officer signal for the web widgets. They used to re-derive

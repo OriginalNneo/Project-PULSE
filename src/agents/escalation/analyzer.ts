@@ -74,6 +74,28 @@ const COMPLAINTS: readonly RegExp[] = [
   /\b(short(paid|changed)|underpaid|over(paid|deducted))\b/i,
 ];
 
+// Non-English signals for the other six supported languages (zh covers simplified +
+// traditional). The analyzer receives raw citizen text from every channel, so the
+// English-only patterns above silently dropped the officer button for anyone not
+// typing English. 人工 excludes 人工智能 ("AI") so "are you an AI?" doesn't escalate.
+const EXPLICIT_REQUESTS_I18N: readonly RegExp[] = [
+  /专员|專員|客服|人工(?!智能)|真人|职员|職員|官员|官員|工作人员|工作人員|转人工|轉人工/, // zh
+  /\b(pegawai|kakitangan)\b|orang sebenar/i,                                          // ms
+  /அதிகாரி|மனிதருடன்|உண்மையான நபர்/,                                                    // ta
+  /अधिकारी|असली इंसान|इंसान से बात/,                                                     // hi
+  /ഉദ്യോഗസ്ഥ/,                                                                          // ml
+  /ਅਧਿਕਾਰੀ/,                                                                            // pa
+];
+
+const PERSONAL_DATA_I18N: readonly RegExp[] = [
+  /(我|自己).{0,10}(余额|餘額|结余|結餘|存款|供款|户口|戶口|账户|帳戶|派息|结存|結存)/, // zh "my …balance/account"
+  /\bbaki (cpf|akaun|saya)\b|\bcaruman saya\b/i,                                      // ms
+  /எனது (சிபிஎஃப்|கணக்கு|இருப்பு)|என் இருப்பு/,                                            // ta
+  /मेरा (बैलेंस|खाता|योगदान)|मेरी शेष राशि/,                                                // hi
+  /എന്റെ (ബാലൻസ്|അക്കൗണ്ട്)/,                                                            // ml
+  /ਮੇਰਾ (ਬੈਲੇਂਸ|ਖਾਤਾ)/,                                                                  // pa
+];
+
 // Hedge phrases that indicate the bot itself signalled it couldn't fully answer
 const BOT_HEDGE_PHRASES: readonly RegExp[] = [
   /i (don't|do not|cannot|can't) (have|find|access|provide) (specific|detailed|exact|personalised)/i,
@@ -108,13 +130,17 @@ export function analyzeEscalation(
 ): EscalationDecision {
   const q = query.toLowerCase();
 
-  // Layer 3 first — explicit request is highest priority signal
-  if (EXPLICIT_REQUESTS.some((p) => p.test(q) || p.test(reply))) {
+  // Layer 3 first — explicit request is highest priority signal. The i18n patterns
+  // also scan the reply, so a bot promise like "我会将您转接给专员" carries the button.
+  if (
+    EXPLICIT_REQUESTS.some((p) => p.test(q) || p.test(reply)) ||
+    EXPLICIT_REQUESTS_I18N.some((p) => p.test(query) || p.test(reply))
+  ) {
     return escalate("explicit_request");
   }
 
   // Layer 1 — personal data
-  if (PERSONAL_DATA.some((p) => p.test(q))) {
+  if (PERSONAL_DATA.some((p) => p.test(q)) || PERSONAL_DATA_I18N.some((p) => p.test(query))) {
     return escalate("personal_data");
   }
 

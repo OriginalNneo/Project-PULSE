@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { processInbound, escalateUser, type InboundChannel } from "./inbound.js";
 import { pushToWeb, drainWeb } from "../adapters/web/bus.js";
 import { upsertUserPrefs } from "../db/proxy-client.js";
+import { detectLanguage } from "../python-bridge/client.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("webchat");
@@ -38,7 +39,16 @@ router.post("/:sessionId/connect", async (req: Request, res: Response) => {
   const sessionId = req.params.sessionId!;
   const body = req.body as { conversationHistory?: Array<{ role?: string; content?: string }>; language?: string };
   const userId = `web:${sessionId}`;
-  const lang = asLang(body.language);
+  let lang = asLang(body.language);
+
+  // The widget's picker may still be on EN while the citizen actually typed Chinese —
+  // officer-relay translation keys off preferred_lang, so detect from their last
+  // message and let a confident detection win over the picker.
+  const lastUserMsg = [...(body.conversationHistory ?? [])].reverse().find((m) => m?.role === "user")?.content ?? "";
+  if (lastUserMsg.trim()) {
+    const detected = await detectLanguage(lastUserMsg).catch(() => null);
+    if (detected?.confident && LANGS.has(detected.lang as Lang)) lang = detected.lang as Lang;
+  }
 
   // Persist language + a friendly display name so officer replies are translated back
   // and the dashboard shows a real label instead of a derived one.
