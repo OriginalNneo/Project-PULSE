@@ -78,7 +78,7 @@ const HF_STT_TIMEOUT_MS = parseInt(process.env.HF_STT_TIMEOUT_MS ?? "", 10) || 9
 
 export async function transcribeAudio(audioBase64: string, mimeType: string): Promise<TranscribeResult> {
   log.info({ mimeType, model: STT_MODEL }, "Transcribing audio via HF");
-  const out = (await hfBinary(STT_MODEL, base64ToBytes(audioBase64), mimeType, { timeoutMs: HF_STT_TIMEOUT_MS })) as { text?: string };
+  const out = (await hfBinary(STT_MODEL, base64ToBytes(audioBase64), mimeType, { timeoutMs: HF_STT_TIMEOUT_MS, retries: 3 })) as { text?: string };
   const text = (out?.text ?? "").trim();
   if (!text) throw new ExternalServiceError("hf", "transcription returned empty text");
   return { text, language: "auto", confidence: 0.9 };

@@ -33,33 +33,40 @@ async function post(model: string, init: RequestInit, timeoutMs = HF_TIMEOUT_MS)
   }
 }
 
-async function call(model: string, init: RequestInit, attempt = 0, timeoutMs?: number): Promise<unknown> {
+export interface HfCallOpts {
+  timeoutMs?: number;
+  /** Transient-failure retries beyond the first attempt (default 1). STT uses more —
+   *  HF's serverless Whisper alternates between warm (~1-5s) and stretches of 504s. */
+  retries?: number;
+}
+
+async function call(model: string, init: RequestInit, attempt = 0, opts: HfCallOpts = {}): Promise<unknown> {
+  const maxRetries = opts.retries ?? MAX_RETRIES;
   let res: Response;
   try {
-    res = await post(model, init, timeoutMs);
+    res = await post(model, init, opts.timeoutMs);
   } catch (err) {
     // Timeouts/aborts and network drops happen while a serverless model cold-starts —
-    // one retry usually lands on the now-warm model. Without this, only 503s were
+    // a retry often lands on the now-warm model. Without this, only 503s were
     // retried and a cold Whisper meant a guaranteed "couldn't hear you" to the user.
-    if (attempt < MAX_RETRIES) {
-      log.warn({ model, err: (err as Error).message }, "HF request failed, retrying");
-      return call(model, init, attempt + 1, timeoutMs);
+    if (attempt < maxRetries) {
+      log.warn({ model, attempt, err: (err as Error).message }, "HF request failed, retrying");
+      return call(model, init, attempt + 1, opts);
     }
     throw new ExternalServiceError("hf", `request to ${model} failed: ${(err as Error).message}`);
   }
 
   // Transient upstream failures: 503 = model warming (HF suggests a wait via
   // estimated_time); 504/502/500 = the router's own gateway timing out on a cold
-  // model (returns an HTML error page); 429 = momentary rate limit. All are worth
-  // one retry — a cold Whisper routinely 504s once and serves the retry.
-  if ([500, 502, 503, 504, 429].includes(res.status) && attempt < MAX_RETRIES) {
+  // model (returns an HTML error page); 429 = momentary rate limit.
+  if ([500, 502, 503, 504, 429].includes(res.status) && attempt < maxRetries) {
     const body = res.status === 503
       ? ((await res.json().catch(() => ({}))) as { estimated_time?: number })
       : {};
-    const waitMs = Math.min((body.estimated_time ?? 5) * 1000, timeoutMs ?? HF_TIMEOUT_MS);
-    log.warn({ model, status: res.status, waitMs }, "HF transient error, retrying");
+    const waitMs = Math.min((body.estimated_time ?? 5) * 1000, opts.timeoutMs ?? HF_TIMEOUT_MS);
+    log.warn({ model, status: res.status, attempt, waitMs }, "HF transient error, retrying");
     await new Promise((r) => setTimeout(r, waitMs));
-    return call(model, init, attempt + 1, timeoutMs);
+    return call(model, init, attempt + 1, opts);
   }
 
   if (!res.ok) {
@@ -71,19 +78,19 @@ async function call(model: string, init: RequestInit, attempt = 0, timeoutMs?: n
 }
 
 /** JSON-in / JSON-out inference (translation, classification, etc.). */
-export function hfJson(model: string, payload: unknown, opts?: { timeoutMs?: number }): Promise<unknown> {
+export function hfJson(model: string, payload: unknown, opts?: HfCallOpts): Promise<unknown> {
   return call(model, {
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
-  }, 0, opts?.timeoutMs);
+  }, 0, opts);
 }
 
 /** Binary-in / JSON-out inference (speech-to-text, audio emotion). */
-export function hfBinary(model: string, bytes: Uint8Array, contentType: string, opts?: { timeoutMs?: number }): Promise<unknown> {
+export function hfBinary(model: string, bytes: Uint8Array, contentType: string, opts?: HfCallOpts): Promise<unknown> {
   return call(model, {
     headers: authHeaders({ "Content-Type": contentType }),
     body: new Blob([bytes], { type: contentType }),
-  }, 0, opts?.timeoutMs);
+  }, 0, opts);
 }
 
 /** JSON-in / binary-out inference (text-to-speech). Returns the raw audio bytes. */
