@@ -278,9 +278,13 @@ function PulseWidget() {
   const [busy,setBusy] = useState(false);
   const [err,setErr]   = useState<string|null>(null);
   const [connecting,setConnecting] = useState(false);
+  const [wMobile,setWMobile] = useState(false);
 
   // Auto-open the chatbot when arrived via a "Try the chatbot" link (/cpf?chat=open).
   useEffect(()=>{ if(typeof window!=="undefined" && /[?&]chat=open\b/.test(window.location.search)) setOpen(true); },[]);
+  // On phones make the widget a near full-screen sheet so the input + "talk to a real
+  // person" button are never clipped by the mobile browser toolbar.
+  useEffect(()=>{ const mq=window.matchMedia("(max-width: 720px)"); const on=()=>setWMobile(mq.matches); on(); mq.addEventListener("change",on); return ()=>mq.removeEventListener("change",on); },[]);
   const logRef = useRef<HTMLDivElement>(null);
 
   // Hand off to a human CCU officer: escalate carrying this conversation as context, then
@@ -312,7 +316,10 @@ function PulseWidget() {
       // Offer a human handoff ONLY when the user explicitly asks for one, or when the query
       // concerns their personal/account data (intent "personal_data"). Deliberately NOT on
       // requiresHumanReview alone — that also fires on low-confidence small talk like "hello".
-      const asked = /\b(officer|human|real person|agent|representative|speak to (?:someone|a person)|talk to (?:someone|a person|an officer)|customer service)\b/i.test(t);
+      const q = t.toLowerCase();
+      const asked =
+        /\b(officer|representative|real person|live (?:agent|person|chat)|customer service)\b/.test(q) ||
+        (/\b(agent|human|staff|someone|somebody|person)\b/.test(q) && /\b(speak|talk|connect|transfer|chat|refer|reach|contact|put|get|want|need)\b/.test(q));
       const privateInfo = d?.intent === "personal_data";
       setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:asked||privateInfo}]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
@@ -320,9 +327,9 @@ function PulseWidget() {
   }
 
   return (
-    <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",fontFamily:FONT}}>
+    <div style={{position:"fixed",bottom:wMobile?12:24,right:wMobile?12:24,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",fontFamily:FONT}}>
       {open&&(
-        <div style={{width:"min(370px, calc(100vw - 32px))",height:"min(520px, calc(100vh - 100px))",background:CPF.white,borderRadius:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
+        <div style={{width:wMobile?"calc(100vw - 24px)":"min(370px, calc(100vw - 32px))",height:wMobile?"calc(100dvh - 92px)":"min(520px, calc(100vh - 100px))",background:CPF.white,borderRadius:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
           <div style={{background:CPF.teal,borderBottom:`4px solid ${CPF.lime}`,color:CPF.white,padding:"11px 14px",display:"flex",alignItems:"center",gap:9,flexShrink:0,whiteSpace:"nowrap"}}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{filter:"brightness(0) invert(1)",flexShrink:0}} />
             <div style={{flex:1,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis"}}>PULSE Virtual Assistant</div>

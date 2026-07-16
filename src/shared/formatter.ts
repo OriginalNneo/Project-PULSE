@@ -223,8 +223,31 @@ function escapeHtml(text: string): string {
  * @param text  Raw LLM output (may contain markdown)
  * @param mode  "html" for Telegram, "plain" for TTS / plain-text channels
  */
+/**
+ * Remove URLs / links from a reply. Singapore government agencies never send links
+ * (scam-resistance — see README "No links in outbound notifications"), so we strip any
+ * the model emits and tidy up the leftover phrasing ("visit cpf.gov.sg" → "visit our website").
+ */
+export function stripLinks(text: string): string {
+  return text
+    // markdown links [text](url) -> keep the text, drop the URL
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    // full URLs and www. links
+    .replace(/\b(?:https?:\/\/|www\.)[^\s<>)]+/gi, "")
+    // bare *.gov.sg domains (with optional path), e.g. cpf.gov.sg/member
+    .replace(/\b[\w-]+(?:\.[\w-]+)*\.gov\.sg(?:\/[^\s<>)]*)?/gi, "")
+    // tidy dangling lead-ins left behind ("visit ", "at ", "here: ")
+    .replace(/\b(?:visit|go to|at|see|check|via)\s+(?=[.,;:)]|$)/gi, "")
+    .replace(/\(\s*\)/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.,;:])/g, "$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function formatReply(text: string, mode: FormatMode = "html"): string {
-  const clean = capLength(normaliseWhitespace(structureText(stripMarkdown(text))));
+  const clean = capLength(normaliseWhitespace(structureText(stripMarkdown(stripLinks(text)))));
   if (mode === "plain") return clean;
   // applyHtmlBold handles both CPF-term bolding and section-header bolding
   // in a single pass, with correct HTML escaping throughout.

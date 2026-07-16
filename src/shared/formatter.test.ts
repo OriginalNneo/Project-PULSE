@@ -13,13 +13,13 @@ describe("formatReply — markdown is stripped", () => {
     expect(out).not.toContain("__");
   });
 
-  // KNOWN GAP: formatter's stripMarkdown (formatter.ts) handles **bold**, _italic_,
-  // `code`, headings — but NOT [text](url) links, so Telegram shows the raw markdown.
-  // Note: stripMarkdownForTTS (inbound.ts:104) DOES strip links — the two strippers
-  // have drifted. it.fails passes today (proving the gap); remove .fails once unified.
-  it.fails("should strip markdown link syntax, keeping the link text", () => {
+  // Government agencies never send links (scam-resistance): formatReply now strips URLs and
+  // markdown link syntax entirely, keeping only the link text.
+  it("strips links entirely (markdown syntax + URL), keeping the link text", () => {
     const out = formatReply("See [the CPF site](https://cpf.gov.sg) for details", "plain");
     expect(out).not.toContain("](");
+    expect(out).not.toContain("http");
+    expect(out).not.toContain("cpf.gov.sg");
     expect(out).toContain("the CPF site");
   });
 });

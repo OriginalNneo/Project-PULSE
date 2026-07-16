@@ -8,6 +8,7 @@ import { groundingCheck } from "../guardian/agent.js";
 import { getPreviousSessionContext } from "./summariser.js";
 import { selectQueryPipeline } from "./router.js";
 import { toneDirective } from "../main/tone.js";
+import { stripLinks } from "../../shared/formatter.js";
 import { queryRegistry, type QueryPipelineState, type QueryToolContext } from "./registry.js";
 import type { QueryIntent } from "./routes.js";
 import type { TriageResult } from "../triage/classifier.js";
@@ -21,9 +22,9 @@ export const BASE_SYSTEM_PROMPT = `You are PULSE, a warm, knowledgeable CPF assi
 3. One idea per sentence; keep sentences under about 25 words. Use plain words ("buy" not "purchase", "about" not "approximately") and the active voice.
 4. Begin the message with ONE relevant emoji (💰 CPF/money, 🏠 housing, 🏥 health, 📅 age/dates, ℹ️ general). At most one more emoji before a section heading. No decorative emoji.
 5. Quote exact figures — dollar amounts, percentages, ages, dates — from the retrieved information. Never round, estimate or invent. Spell out an acronym the first time you use it, e.g. "Retirement Account (RA)".
-6. End with the relevant cpf.gov.sg link on its own line, if one was retrieved.
+6. NEVER include links, URLs, or web addresses of any kind (no "cpf.gov.sg", no "https://…"). Government agencies never send links. Refer to "the official CPF website" in words instead.
 7. Respond in the user's language, keeping this same warm, plain tone.
-8. If asked about a user's personal balance, contributions or payout: say clearly that you cannot access personal account data, point them to cpf.gov.sg/member, and offer a CPF officer. Do NOT mention phone numbers or hotlines.
+8. If asked about a user's personal balance, contributions or payout: say clearly that you cannot access personal account data, tell them to log in to the official CPF website (in words — no link), and offer a CPF officer. Do NOT mention phone numbers or hotlines.
 
 Do NOT say you cannot answer if the retrieved information covers the topic. Do NOT pad the answer or add disclaimers like "please consult a financial advisor" for public CPF information.`;
 
@@ -102,20 +103,30 @@ export async function runQueryAgent(
   // Always use the full retrieved content for Hermes — never the truncated outputText.
   const retrievedForLLM = state.retrievedContent || state.outputText;
 
+  // Bring the recent conversation forward so follow-ups ("what about my spouse?", asked in
+  // any language) are understood in context — the pipeline only retrieves on the last message.
+  const historyStr = messages
+    .slice(0, -1)
+    .filter((m) => m.content?.trim())
+    .slice(-6)
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n")
+    .slice(0, 1500);
+
   // ── Response-level cache ─────────────────────────────────────────────────────
   // The effective emotion tier is part of the key — otherwise a soothing (angry)
   // reply would be served from a neutral cache entry, defeating tone adaptation.
   // `sustained` is keyed too because it changes the directive wording (the
   // ongoing-difficulty acknowledgement), so it must not share a cache slot.
   const cacheHash = createHash("sha256")
-    .update(`${intent}|${query.toLowerCase().trim()}|${language}|${ctx.triage?.category ?? 1}|${ctx.emotion?.label ?? "neutral"}|${ctx.emotion?.sustained ? "s" : ""}`)
+    .update(`${intent}|${query.toLowerCase().trim()}|${language}|${ctx.triage?.category ?? 1}|${ctx.emotion?.label ?? "neutral"}|${ctx.emotion?.sustained ? "s" : ""}|${historyStr}`)
     .digest("hex");
 
   const cached = await getQueryCache(cacheHash).catch(() => null);
   if (cached) {
     log.info({ cacheHash, intent }, "Query response served from cache");
     return {
-      content: cached.response,
+      content: stripLinks(cached.response),
       agentName: "query",
       confidence: state.confidence,
       requiresHumanReview: false,
@@ -127,10 +138,11 @@ export async function runQueryAgent(
   }
 
   const hermesContext = [
+    historyStr ? `Conversation so far:\n${historyStr}` : null,
     `User question: "${query}"`,
     `Retrieved CPF information:\n${retrievedForLLM}`,
     state.navigationUrl ? `Source URL: ${state.navigationUrl}` : null,
-    language !== "en" ? `Respond in: ${language}` : null,
+    language !== "en" ? `Respond in: ${language}. Keep using the language of the conversation above unless the user switches.` : null,
   ].filter(Boolean).join("\n\n");
 
   // GLM is a thinking model; content is empty if the LLM is down or ran out of tokens
@@ -140,7 +152,7 @@ export async function runQueryAgent(
   const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion), hermesContext, [], 1024, true, { thinking: { type: "disabled" } }).catch(() => "");
   const llmContent = rawContent.trim();
   const llmFailed = llmContent.length === 0;
-  const content = llmContent || retrievedForLLM;
+  const content = stripLinks(llmContent || retrievedForLLM);
 
   // Only flag hallucinations on fabricated numbers (>3 ungrounded). Word-overlap
   // is not used — GLM naturally paraphrases and that is not a hallucination.
