@@ -1,7 +1,7 @@
 import type { Language } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
 import { runQueryAgent } from "../agents/query/agent.js";
-import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, updateQueuePriority, appendToQueueHistory, setQueueQuerySummary, type UserPrefs } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, updateQueueLang, updateQueuePriority, appendToQueueHistory, setQueueQuerySummary, type UserPrefs } from "../db/proxy-client.js";
 import { callHermes } from "../services/ai/llmClient.js";
 import { findGuidingSetForQuery } from "../data/knowledge/guiding.js";
 import { synthesizeGuidedAnswer } from "../agents/query/guidedSynthesis.js";
@@ -1045,6 +1045,19 @@ async function relayToOfficer(
   messageText: string,
   userLang: string,
 ): Promise<void> {
+  // Detect the language of THIS message rather than trusting the stored pref — the
+  // pref can be stale/wrong (e.g. the web widget escalated with its EN default while
+  // the citizen writes Chinese), which used to put untranslated text on the officer
+  // dashboard AND left officer replies untranslated. A confident detection also
+  // re-syncs the pref and the live case so the officer→citizen direction heals too.
+  const detected = await detectLanguage(messageText).catch(() => null);
+  if (detected?.confident && detected.lang !== userLang) {
+    log.info({ userId, prefLang: userLang, detectedLang: detected.lang }, "Relay message language differs from pref — re-syncing case language");
+    userLang = detected.lang;
+    await upsertUserPrefs({ userId, preferred_lang: userLang }).catch(() => null);
+    await updateQueueLang(queueId, userLang).catch(() => null);
+  }
+
   let englishText = messageText;
   if (userLang !== "en") {
     const t = await translateText(messageText, userLang, "en").catch(() => null);

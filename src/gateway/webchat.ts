@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { processInbound, escalateUser, type InboundChannel } from "./inbound.js";
 import { pushToWeb, drainWeb } from "../adapters/web/bus.js";
-import { upsertUserPrefs } from "../db/proxy-client.js";
+import { getUserPrefs, upsertUserPrefs } from "../db/proxy-client.js";
 import { detectLanguage } from "../python-bridge/client.js";
 import { createServiceLogger } from "../shared/logger.js";
 
@@ -39,7 +39,14 @@ router.post("/:sessionId/connect", async (req: Request, res: Response) => {
   const sessionId = req.params.sessionId!;
   const body = req.body as { conversationHistory?: Array<{ role?: string; content?: string }>; language?: string };
   const userId = `web:${sessionId}`;
-  let lang = asLang(body.language);
+  // Language priority: confident detection from their last message > explicit picker
+  // value > what the backend already learned from the conversation > "en". The picker
+  // default must never clobber a language the chat itself established — that used to
+  // reset zh cases to en, leaving both relay directions untranslated.
+  const existing = await getUserPrefs(userId).catch(() => null);
+  let lang = typeof body.language === "string"
+    ? asLang(body.language)
+    : asLang(existing?.preferred_lang);
 
   // The widget's picker may still be on EN while the citizen actually typed Chinese —
   // officer-relay translation keys off preferred_lang, so detect from their last

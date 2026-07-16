@@ -389,6 +389,20 @@ export async function setQueueQuerySummary(queueId: string, querySummary: string
   return updated;
 }
 
+// Keeps a live case's language in sync when the citizen's real language only becomes
+// apparent mid-case (e.g. escalated with the widget's EN default, then messaged in
+// Chinese) — officer-reply translation targets this field.
+export async function updateQueueLang(queueId: string, preferredLang: string): Promise<QueueEntry | null> {
+  const entry = queueStore.get(queueId);
+  if (!entry) return null;
+  const updated = { ...entry, preferred_lang: preferredLang };
+  queueStore.set(queueId, updated);
+  getPulseCollection("ccu_queue")
+    .then((col) => col?.updateOne({ queueId }, { $set: { preferred_lang: preferredLang } }))
+    .catch((err) => log.warn({ err }, "Failed to update queue preferred_lang in MongoDB"));
+  return updated;
+}
+
 export async function updateQueuePriority(queueId: string, priorityScore: number): Promise<QueueEntry | null> {
   const entry = queueStore.get(queueId);
   if (!entry) return null;
