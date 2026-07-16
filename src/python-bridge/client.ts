@@ -276,9 +276,12 @@ export async function detectLanguage(text: string): Promise<{ lang: string; conf
 
   // 4) Latin script (en vs ms): HF detector, then LLM fallback when HF returns a code we
   //    don't support (it mislabels Malay, e.g. → "ru").
+  // Short budget, no retry: this runs inside every reply, and when HF serverless is in
+  // one of its dead stretches the old 30s×2 budget added a full minute per message.
+  // The LLM fallback answers in ~2s, so failing over fast is strictly better.
   log.info({ model: DETECT_MODEL }, "Detecting language via HF");
   try {
-    const out = (await hfJson(DETECT_MODEL, { inputs: text })) as Array<Array<{ label: string; score: number }>>;
+    const out = (await hfJson(DETECT_MODEL, { inputs: text }, { timeoutMs: 5000, retries: 0 })) as Array<Array<{ label: string; score: number }>>;
     // text-classification returns [[{label, score}, ...]] sorted by score desc.
     const top = Array.isArray(out) && Array.isArray(out[0]) ? out[0][0] : undefined;
     const label = (top?.label ?? "").split(/[-_]/)[0] ?? "";
@@ -296,7 +299,9 @@ export async function detectLanguage(text: string): Promise<{ lang: string; conf
 // ── Emotion / sentiment classification (text-classification via HF) ───────────
 export async function detectEmotion(text: string): Promise<EmotionResult> {
   log.info({ model: EMOTION_MODEL }, "Detecting emotion via HF");
-  const out = (await hfJson(EMOTION_MODEL, { inputs: text })) as Array<Array<{ label: string; score: number }>>;
+  // Short budget, no retry — the reply pipeline awaits this, and callers already
+  // default to neutral on failure. Not worth a minute of HF-outage stalling.
+  const out = (await hfJson(EMOTION_MODEL, { inputs: text }, { timeoutMs: 8000, retries: 0 })) as Array<Array<{ label: string; score: number }>>;
   const top = Array.isArray(out) && Array.isArray(out[0]) ? out[0][0] : undefined;
   if (!top) throw new ExternalServiceError("hf", "emotion detection returned no labels");
   return { label: top.label.toLowerCase(), score: top.score };
@@ -306,7 +311,8 @@ export async function detectEmotion(text: string): Promise<EmotionResult> {
 // the text emotion score when the user sent a voice note.
 export async function detectAudioEmotion(audioBase64: string, mimeType: string): Promise<AudioEmotionResult> {
   log.info({ model: AUDIO_EMOTION_MODEL }, "Detecting audio emotion via HF");
-  const out = (await hfBinary(AUDIO_EMOTION_MODEL, base64ToBytes(audioBase64), mimeType)) as
+  // Same rationale as detectEmotion — callers null-coalesce on failure.
+  const out = (await hfBinary(AUDIO_EMOTION_MODEL, base64ToBytes(audioBase64), mimeType, { timeoutMs: 10000, retries: 0 })) as
     | Array<{ label: string; score: number }>
     | { valence?: number; arousal?: number; dominance?: number };
 
