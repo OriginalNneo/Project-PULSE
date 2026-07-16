@@ -18,11 +18,6 @@ const OFFICER_ID = 'patricia-lam';
 // reads "60 minutes" regardless of this value; only the trigger timing is adjustable.
 const URGENCY_THRESHOLD_MS = 5 * 60 * 1000;
 
-// Must match the root container's `transform: scale(...)` below — used to convert a raw
-// mouse click (viewport pixels) into that transformed container's local coordinate space
-// so the right-click "Mark as urgent" menu lands under the cursor instead of offset.
-const DASHBOARD_SCALE = 0.8;
-
 // Mock fallbacks for fields the backend queue does NOT carry (identity + financials).
 const MOCK_C = 'Singapore Citizen';
 const MOCK_BAL = { oa: '$12,430', ma: '$4,862', ra: '$8,205' };
@@ -318,8 +313,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
   const [overdueIds, setOverdueIds] = useState(() => new Set()); // incoming query ids currently shaking
   const [banners, setBanners] = useState([]); // [{ bannerId, id, name }] — urgency-ping notifications
-  const [urgencyOverrides, setUrgencyOverrides] = useState({}); // id → 'urgent' | 'downgrade', from the right-click menu
-  const [ctxMenu, setCtxMenu] = useState(null); // { x, y, id } — x/y already converted to the dashboard's local (pre-scale) coordinates
+  const [urgencyOverrides, setUrgencyOverrides] = useState({}); // id → 'urgent' | 'downgrade', from clicking a card's urgency badge
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [translations, setTranslations] = useState({}); // original text → { translated, showing, loading, error }
@@ -547,14 +541,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
       const currentlyUrgent = peopleView[id]?.urgency === 'urgent';
       return { ...prev, [id]: currentlyUrgent ? 'downgrade' : 'urgent' };
     });
-    setCtxMenu(null);
   }, [peopleView]);
-
-  const openCtxMenu = useCallback((e, id) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setCtxMenu({ x: e.clientX / DASHBOARD_SCALE, y: e.clientY / DASHBOARD_SCALE, id });
-  }, []);
 
   const queries = useMemo(() => {
     let ids = incoming.slice();
@@ -586,7 +573,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
       id, name: p.name, urgency: p.urgency, sentiment: p.sentiment,
       preview: (last ? last.text : '').replace(/\s+/g, ' ').slice(0, 64),
       isOpen: id === openChatId,
-      showAlert: p.urgency === 'urgent',
       idle, waitH, custMins,
     };
   }), [active, threads, openChatId, peopleView]);
@@ -681,7 +667,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         .cpf-emo{position:relative;display:flex}
         .cpf-emo-tip{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(-4px);background:#1c1c1c;color:#fff;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:5}
         .cpf-emo:hover .cpf-emo-tip{opacity:1;transform:translateX(-50%) translateY(0)}
-        .cpf-ctx-item{transition:background .12s}.cpf-ctx-item:hover{background:#f4f4f4}
+        .cpf-urgent-badge{transition:filter .15s,box-shadow .15s}.cpf-urgent-badge:hover{filter:brightness(0.94)}
       `}</style>
 
       {/* Urgency ping banners — one per overdue query, dismissible, stack top-right */}
@@ -707,22 +693,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         ))}
       </div>
 
-      {/* Right-click "Mark/Unmark as urgent" menu — incoming cards + active-chats sidebar rows */}
-      {ctxMenu && peopleView[ctxMenu.id] && (
-        <>
-          <div onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-          <div style={{ position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 999, background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(16,24,40,.18)', border: '1px solid #e7e9ec', padding: 6, minWidth: 180 }}>
-            <div
-              className="cpf-ctx-item"
-              onClick={() => toggleUrgent(ctxMenu.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#1c1c1c' }}
-            >
-              <span style={{ fontWeight: 800, color: '#ca2424' }}>!</span>
-              {peopleView[ctxMenu.id].urgency === 'urgent' ? 'Unmark urgent' : 'Mark as urgent'}
-            </div>
-          </div>
-        </>
-      )}
 
       <NavRail
         collapsed={navCollapsed}
@@ -777,15 +747,13 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           {queries.length > 0 ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
               {queries.map((p) => (
-                <div key={p.id} className={`cpf-card-hover${overdueIds.has(p.id) ? ' cpf-card-shake' : ''}`} onClick={() => accept(p.id)} onContextMenu={(e) => openCtxMenu(e, p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div key={p.id} className={`cpf-card-hover${overdueIds.has(p.id) ? ' cpf-card-shake' : ''}`} onClick={() => accept(p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                   <div style={{ height: 6, background: sentColor(p.sentiment) }} />
                   <div style={{ padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>{p.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
-                        {p.urgency === 'urgent' && (
-                          <span style={{ fontSize: 26, fontWeight: 800, color: '#ca2424', lineHeight: 1 }}>!</span>
-                        )}
+                        <UrgentBadge urgent={p.urgency === 'urgent'} onToggle={(e) => { e.stopPropagation(); toggleUrgent(p.id); }} />
                         <div className="cpf-emo" style={{ flex: 'none' }}>
                           <div className="cpf-emo-tip">
                             {sentLabel(p.sentiment)}
@@ -860,13 +828,11 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
             </div>
             <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto' }}>
               {(chatView === 'inactive' ? idleChats : liveChats).map((row) => (
-                <div key={row.id} onClick={() => open(row.id)} onContextMenu={(e) => openCtxMenu(e, row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : (row.idle ? 'rgba(201,138,30,0.05)' : 'rgba(12,134,132,0.03)'), boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
+                <div key={row.id} onClick={() => open(row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : (row.idle ? 'rgba(201,138,30,0.05)' : 'rgba(12,134,132,0.03)'), boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
                   <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: sentColor(row.sentiment), opacity: row.idle ? .45 : 1 }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: row.idle ? '#555' : '#1c1c1c' }}>{row.name}</span>
-                    {row.showAlert && !row.idle && (
-                      <span style={{ fontSize: 20, fontWeight: 800, color: '#ca2424', lineHeight: 1, flex: 'none' }}>!</span>
-                    )}
+                    <UrgentBadge urgent={row.urgency === 'urgent'} onToggle={(e) => { e.stopPropagation(); toggleUrgent(row.id); }} />
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 300, color: row.idle ? '#777' : '#444', display: 'block', marginTop: 4, lineHeight: 1.35, maxHeight: 36, overflow: 'hidden' }}>{row.preview}</span>
                   {row.idle
@@ -1200,6 +1166,20 @@ function StatCard({ value, label, sub, subColor, accent, icon }) {
         </span>
       </div>
     </div>
+  );
+}
+// Urgency toggle badge — red "!" when urgent, greyed out otherwise. Click to flip it.
+function UrgentBadge({ urgent, onToggle }) {
+  return (
+    <button
+      type="button"
+      className="cpf-urgent-badge"
+      onClick={onToggle}
+      title={urgent ? 'Click to unmark as urgent' : 'Click to mark as urgent'}
+      style={{ appearance: 'none', WebkitAppearance: 'none', width: 28, height: 28, padding: 0, margin: 0, flex: 'none', borderRadius: '50%', border: 'none', cursor: 'pointer', background: urgent ? '#ca2424' : '#e3e5e5', color: urgent ? '#fff' : '#9a9a9a', fontSize: 18, fontWeight: 800, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      !
+    </button>
   );
 }
 function Field({ label, value }) {
