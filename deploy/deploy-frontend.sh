@@ -4,6 +4,11 @@
 # PULSE_REPO_DIR defaults to the parent of this script's directory.
 set -euo pipefail
 
+# The webhook path runs this script with the backend's pm2 environment, whose NODE_ENV
+# broke next build (non-standard-value prerender failure) and would make npm install
+# skip the devDependencies the build needs. Normalise: unset and let each tool default.
+unset NODE_ENV
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${PULSE_REPO_DIR:-$(dirname "$SCRIPT_DIR")}"
 BRANCH="main"
