@@ -150,7 +150,7 @@ function Accordion({ q, a, open, onToggle }: { q: string; a: string; open: boole
 
 // ── PULSE chat widget (mirrors /cpf) ────────────────────────────────────────
 type Role = "user" | "agent";
-interface Msg { role: Role; content: string; }
+interface Msg { role: Role; content: string; offer?: boolean; } // offer: bot suggested connecting to a human officer
 const CHAT_LANGS = [{ l: "EN", c: "en" }, { l: "中文", c: "zh" }, { l: "BM", c: "ms" }, { l: "த", c: "ta" }];
 
 function PulseWidget() {
@@ -159,8 +159,25 @@ function PulseWidget() {
   const [text, setText] = useState("");
   const [lang, setLang] = useState("en");
   const [busy, setBusy] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+
+  // Hand off to a human CCU officer: escalate carrying this conversation as context, then
+  // open the Text Us page bound to the same web session so the chat continues live there.
+  // (Kept in sync with the /cpf widget — see cpf/page.tsx.)
+  async function connectOfficer() {
+    if (connecting) return;
+    setConnecting(true);
+    const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await fetch(`${API_BASE}/webchat/${sessionId}/connect`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationHistory: msgs, language: lang }) });
+    } catch { /* proceed anyway — the Text Us page can still resume this session */ }
+    window.location.href = `/textus?s=${encodeURIComponent(sessionId)}`;
+  }
 
   async function send() {
     const t = text.trim(); if (!t || busy) return;
@@ -172,7 +189,18 @@ function PulseWidget() {
         body: JSON.stringify({ message: t, conversationHistory: msgs, language: lang }) });
       if (!r.ok) throw new Error();
       const j = await r.json();
-      setMsgs((p) => [...p, { role: "agent", content: j?.data?.content ?? "Sorry, I couldn't get a response." }]);
+      const d = j?.data;
+      // Same offer detection as the /cpf widget: backend semantic signal first (works in any
+      // language), then the English regex fallbacks for older backends.
+      const q = t.toLowerCase();
+      const asked =
+        /\b(officer|representative|real person|live (?:agent|person|chat)|customer service)\b/.test(q) ||
+        (/\b(agent|human|staff|someone|somebody|person)\b/.test(q) && /\b(speak|talk|connect|transfer|chat|refer|reach|contact|put|get|want|need)\b/.test(q));
+      const privateInfo = d?.intent === "personal_data";
+      const reply = String(d?.content ?? "").toLowerCase();
+      const offered = reply.includes("officer") && /\b(connect|redirect|transfer|shortly|with you|reply|escalat|hand(?:ing)? (?:you )?over)\b/.test(reply);
+      const serverOffer = d?.offerOfficer === true;
+      setMsgs((p) => [...p, { role: "agent", content: d?.content ?? "Sorry, I couldn't get a response.", offer: serverOffer || asked || privateInfo || offered }]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
     finally { setBusy(false); setTimeout(() => logRef.current?.scrollTo({ top: 9999, behavior: "smooth" }), 50); }
   }
@@ -198,8 +226,14 @@ function PulseWidget() {
           </div>
           <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: 9, background: "#f4f5f6" }}>
             {msgs.map((m, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", gap: 6 }}>
                 <div style={{ maxWidth: "82%", padding: "9px 12px", borderRadius: m.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px", background: m.role === "user" ? CPF.teal : CPF.white, color: m.role === "user" ? CPF.white : CPF.text, fontSize: 13, lineHeight: 1.55, boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>{m.content}</div>
+                {m.role === "agent" && m.offer && (
+                  <button onClick={() => void connectOfficer()} disabled={connecting}
+                    style={{ maxWidth: "90%", border: "none", background: connecting ? "#e6efee" : CPF.teal, color: connecting ? CPF.teal : CPF.white, borderRadius: 8, padding: "9px 14px", fontSize: 12.5, fontWeight: 700, cursor: connecting ? "default" : "pointer", boxShadow: "0 2px 6px rgba(10,97,96,.3)", display: "flex", alignItems: "center", gap: 7, lineHeight: 1.3 }}>
+                    <span aria-hidden="true">👤</span>{connecting ? "Connecting you to an officer…" : "Click here to talk to a real person →"}
+                  </button>
+                )}
               </div>
             ))}
             {busy && <div style={{ alignSelf: "flex-start", background: CPF.white, borderRadius: "12px 12px 12px 3px", padding: "9px 14px", fontSize: 18, letterSpacing: 3, color: "#bbb", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>···</div>}
