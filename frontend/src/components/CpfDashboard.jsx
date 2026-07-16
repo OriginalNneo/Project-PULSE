@@ -12,11 +12,8 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? '';
 const OFFICER_ID = 'patricia-lam';
 
-// Urgency ping (failure scenario: unanswered incoming query). Real-world threshold is
-// 60 minutes. Kept well above a typical demo take so cards don't all auto-fire mid-recording —
-// click a card's "X min ago" text to trigger its ping on demand instead. Banner copy always
-// reads "60 minutes" regardless of this value; only the trigger timing is adjustable.
-const URGENCY_THRESHOLD_MS = 5 * 60 * 1000;
+// Urgency ping (failure scenario: unanswered incoming query) is manual-only — click a card's
+// "X min ago" text to fire its banner + shake on demand. Banner copy always reads "60 minutes".
 
 // Mock fallbacks for fields the backend queue does NOT carry (identity + financials).
 const MOCK_C = 'Singapore Citizen';
@@ -327,7 +324,6 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const removedRef = useRef(new Set());    // locally-resolved ids (mock + live) — don't re-show on refetch
   const acceptTimesRef = useRef(new Map()); // id → accept timestamp (ms), set once on accept; cleared on resolve
   const activityRef = useRef({});          // id → last-message time (ms); drives the 2h active/inactive split
-  const firstSeenRef = useRef(new Map());  // incoming query id → when the dashboard first saw it unanswered (ms)
 
   useEffect(() => {
     const el = msgRef.current;
@@ -426,7 +422,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   }, []);
 
   // Urgency ping — marks an incoming query overdue: starts its shake and pushes a
-  // dismissible banner. Called by the threshold timer below, or manually (demo button).
+  // dismissible banner. Manual only — triggered by clicking a card's "X min ago" text.
   const flagOverdue = useCallback((id, name) => {
     setOverdueIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setBanners((prev) => [...prev, { bannerId: `${id}-${Date.now()}`, id, name }]);
@@ -436,32 +432,13 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     setBanners((prev) => prev.filter((b) => b.bannerId !== bannerId));
   }, []);
 
-  // Every incoming (unanswered) query starts a clock the moment it's first seen here.
-  // Once one crosses URGENCY_THRESHOLD_MS without being accepted, it fires once via flagOverdue.
+  // Accepting/resolving a query stops its shake (the card itself has left this list).
   useEffect(() => {
-    const seen = firstSeenRef.current;
-    for (const id of incoming) if (!seen.has(id)) seen.set(id, Date.now());
-    for (const id of Array.from(seen.keys())) if (!incoming.includes(id)) seen.delete(id);
-    // Accepting/resolving a query stops its shake (the card itself has left this list).
     setOverdueIds((prev) => {
       const next = new Set([...prev].filter((id) => incoming.includes(id)));
       return next.size === prev.size ? prev : next;
     });
   }, [incoming]);
-
-  useEffect(() => {
-    const tick = setInterval(() => {
-      const now = Date.now();
-      for (const [id, firstSeen] of firstSeenRef.current) {
-        if (overdueIds.has(id)) continue;
-        if (now - firstSeen >= URGENCY_THRESHOLD_MS) {
-          const person = people[id];
-          if (person) flagOverdue(id, person.name);
-        }
-      }
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [overdueIds, people, flagOverdue]);
 
   const open = useCallback((id) => { setOpenChatId(id); setInfoTab('info'); }, []);
 
