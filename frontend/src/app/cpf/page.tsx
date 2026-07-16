@@ -358,6 +358,10 @@ function PulseWidget() {
               style={{flex:1,resize:"none",border:`1.5px solid ${CPF.border}`,borderRadius:6,padding:"7px 9px",fontSize:13,fontFamily:FONT,outline:"none"}} />
             <button onClick={()=>void send()} disabled={busy||!text.trim()} style={{appearance:"none",WebkitAppearance:"none",boxSizing:"border-box",width:38,height:38,padding:0,margin:0,flexShrink:0,borderRadius:"50%",border:"none",background:busy||!text.trim()?"#ccc":CPF.teal,color:CPF.white,cursor:busy||!text.trim()?"default":"pointer",alignSelf:"flex-end",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon size={16} path={ICONS.send} /></button>
           </div>
+          {/* Persistent disclaimer — always visible while the widget is open (scenario: policy ambiguity) */}
+          <div style={{flexShrink:0,padding:"6px 11px",background:"#fff8e1",borderTop:"1px solid #f0d878",color:"#7a5c00",fontSize:11,lineHeight:1.4}}>
+            ⚠️ AI responses may not reflect the latest CPF policies. Please verify with a Customer Care Officer.
+          </div>
         </div>
       )}
       <button onClick={()=>setOpen(o=>!o)} style={{appearance:"none",WebkitAppearance:"none",boxSizing:"border-box",width:56,height:56,padding:0,margin:0,flexShrink:0,borderRadius:"50%",border:`3px solid ${CPF.lime}`,background:CPF.teal,color:CPF.white,cursor:"pointer",boxShadow:"0 4px 16px rgba(10,97,96,.4)",display:"flex",alignItems:"center",justifyContent:"center"}}>

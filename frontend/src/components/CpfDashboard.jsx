@@ -12,6 +12,9 @@ import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? '';
 const OFFICER_ID = 'patricia-lam';
 
+// Urgency ping (failure scenario: unanswered incoming query) is manual-only — click a card's
+// "X min ago" text to fire its banner + shake on demand. Banner copy always reads "60 minutes".
+
 // Mock fallbacks for fields the backend queue does NOT carry (identity + financials).
 const MOCK_C = 'Singapore Citizen';
 const MOCK_BAL = { oa: '$12,430', ma: '$4,862', ra: '$8,205' };
@@ -185,7 +188,20 @@ const PEOPLE = (function () {
     // bucket, to test the time-based split. Opening or replying re-activates it.
     { id: 'meng', name: 'Ong Bee Choo', sal: 'Madam Ong', nric: 'S6534210Q', age: 60, phone: '+65 9330 7788', dob: '08 Feb 1966', address: 'Blk 511 Bedok Nth St 3, #12-32', urgency: 'low', sentiment: 'neutral', subject: 'CPF LIFE monthly payout', preview: 'Confirmed her payout details earlier and has not messaged since\u2026', mins: 150,
       balances: { oa: '$18,900', ma: '$23,400', ra: '$102,300' },
-      summary: 'User asked to confirm her CPF LIFE monthly payout details.', q: 'Just checking \u2014 is my payout amount correct?' }
+      summary: 'User asked to confirm her CPF LIFE monthly payout details.', q: 'Just checking \u2014 is my payout amount correct?' },
+    // Demo card for the urgency-ping scenario: sitting at "60 min ago", urgent, but not
+    // auto-flagged \u2014 click its "60 min ago" text (or wait for the auto-timer) to fire the ping.
+    { id: 'farah', name: 'Farah Yusof', sal: 'Ms Yusof', nric: 'S8267845R', age: 39, phone: '+65 9556 7810', dob: '14 Aug 1987', address: 'Blk 122 Yishun Ring Rd, #06-19', language: 'Malay', urgency: 'medium', sentiment: 'frustrated', subject: 'CPF nomination not updated', preview: 'Says a nomination update she submitted weeks ago still hasn\u2019t been reflected in her account\u2026', mins: 60,
+      balances: { oa: '$36,700', ma: '$19,850', ra: '$27,400' }, flags: ['Nomination update pending \u2014 submitted over 2 weeks ago'],
+      summary: 'User says a CPF nomination update she submitted weeks ago has still not been reflected in her account.', q: 'I submitted this weeks ago, why hasn\u2019t anything changed?',
+      priorSession: [
+        { text: 'Hi, I\u2019d like to check on my CPF nomination update.', right: true },
+        { text: 'You can make or update a CPF nomination online via the CPF website using Singpass, or in person at any CPF Service Centre.', right: false },
+        { text: 'I already did that weeks ago but it still hasn\u2019t been reflected in my account.', right: true },
+        { text: 'I\u2019m sorry to hear that. Nomination updates are usually processed within 5 working days. Could you let me know when you submitted it?', right: false },
+        { text: 'I submitted this weeks ago, why hasn\u2019t anything changed?', right: true },
+        { text: 'This needs a closer look. I\u2019m connecting you to a Customer Correspondence Officer who can assist you further.', right: false },
+      ] }
   ];
   const out = {};
   raw.forEach(function (p) {
@@ -200,7 +216,7 @@ const PEOPLE = (function () {
 })();
 
 // Seed lists for the mock cases (heera's original incoming / active split).
-const MOCK_INCOMING = ['nurul', 'raj', 'lim', 'wong', 'ahamed', 'lee', 'siti', 'thomas', 'goh', 'harpreet'];
+const MOCK_INCOMING = ['nurul', 'raj', 'lim', 'wong', 'ahamed', 'lee', 'siti', 'thomas', 'goh', 'harpreet', 'farah'];
 const MOCK_ACTIVE = ['tan', 'priya', 'chen', 'meng'];
 const MOCK_THREADS = Object.fromEntries(Object.entries(PEOPLE).map(([id, p]) => [id, p.thread.slice()]));
 // Fuller back-and-forth for the active (open) chats so they read like live conversations.
@@ -234,7 +250,7 @@ Object.assign(MOCK_THREADS, {
 
 /* -------------------------------------------------------------- helpers --- */
 
-const fmt = (m) => (m < 1 ? 'Just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} hr ago`);
+const fmt = (m) => (m < 1 ? 'Just now' : m <= 60 ? `${m} min ago` : `${Math.floor(m / 60)} hr ago`);
 // Compact accept→resolve duration for the AVG RESPONSE TIME card (sub-minute shows seconds).
 const fmtDuration = (ms) => {
   const s = Math.round(ms / 1000);
@@ -292,6 +308,9 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState(false);
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
+  const [overdueIds, setOverdueIds] = useState(() => new Set()); // incoming query ids currently shaking
+  const [banners, setBanners] = useState([]); // [{ bannerId, id, name }] — urgency-ping notifications
+  const [urgencyOverrides, setUrgencyOverrides] = useState({}); // id → 'urgent' | 'downgrade', from clicking a card's urgency badge
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [translations, setTranslations] = useState({}); // original text → { translated, showing, loading, error }
@@ -402,6 +421,25 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     } catch { /* keep the optimistic removal even if the request fails */ }
   }, []);
 
+  // Urgency ping — marks an incoming query overdue: starts its shake and pushes a
+  // dismissible banner. Manual only — triggered by clicking a card's "X min ago" text.
+  const flagOverdue = useCallback((id, name) => {
+    setOverdueIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    setBanners((prev) => [...prev, { bannerId: `${id}-${Date.now()}`, id, name }]);
+  }, []);
+
+  const dismissBanner = useCallback((bannerId) => {
+    setBanners((prev) => prev.filter((b) => b.bannerId !== bannerId));
+  }, []);
+
+  // Accepting/resolving a query stops its shake (the card itself has left this list).
+  useEffect(() => {
+    setOverdueIds((prev) => {
+      const next = new Set([...prev].filter((id) => incoming.includes(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [incoming]);
+
   const open = useCallback((id) => { setOpenChatId(id); setInfoTab('info'); }, []);
 
   // For auto-translated citizen messages we already have both versions — flip locally, no fetch.
@@ -459,21 +497,44 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
 
   /* ---- derived view data ---- */
 
+  // Applies the right-click "Mark/Unmark as urgent" overrides on top of each person's natural
+  // urgency, without touching the underlying `people` state (client-side only, like the rest
+  // of this dashboard's demo state).
+  const peopleView = useMemo(() => {
+    const ids = Object.keys(urgencyOverrides);
+    if (!ids.length) return people;
+    const next = { ...people };
+    for (const id of ids) {
+      if (!next[id]) continue;
+      const ov = urgencyOverrides[id];
+      const urgency = ov === 'urgent' ? 'urgent' : (next[id].urgency === 'urgent' ? 'medium' : next[id].urgency);
+      next[id] = { ...next[id], urgency };
+    }
+    return next;
+  }, [people, urgencyOverrides]);
+
+  const toggleUrgent = useCallback((id) => {
+    setUrgencyOverrides((prev) => {
+      const currentlyUrgent = peopleView[id]?.urgency === 'urgent';
+      return { ...prev, [id]: currentlyUrgent ? 'downgrade' : 'urgent' };
+    });
+  }, [peopleView]);
+
   const queries = useMemo(() => {
     let ids = incoming.slice();
-    if (filter !== 'all') ids = ids.filter((id) => people[id].urgency === filter);
+    if (filter !== 'all') ids = ids.filter((id) => peopleView[id].urgency === filter);
     ids.sort((a, b) => {
-      const pa = people[a], pb = people[b];
+      const pa = peopleView[a], pb = peopleView[b];
       if (sort === 'oldest') return pb.mins - pa.mins;
       if (sort === 'urgency') return urgRank(pb.urgency) - urgRank(pa.urgency) || pa.mins - pb.mins;
       if (sort === 'sentiment') return sentRank(pb.sentiment) - sentRank(pa.sentiment) || pa.mins - pb.mins;
       return pa.mins - pb.mins;
     });
-    return ids.map((id) => people[id]);
-  }, [incoming, filter, sort]);
+    return ids.map((id) => peopleView[id]);
+  }, [incoming, filter, sort, peopleView]);
 
   const chatRows = useMemo(() => active.map((id) => {
-    const p = people[id];
+    const p = peopleView[id];
     const t = threads[id] || [];
     const last = t[t.length - 1];
     // "Inactive" = no message from EITHER side (officer replies count) for over 2h.
@@ -489,10 +550,9 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
       id, name: p.name, urgency: p.urgency, sentiment: p.sentiment,
       preview: (last ? last.text : '').replace(/\s+/g, ' ').slice(0, 64),
       isOpen: id === openChatId,
-      showAlert: p.urgency === 'urgent',
       idle, waitH, custMins,
     };
-  }), [active, threads, openChatId]);
+  }), [active, threads, openChatId, peopleView]);
   // Active-chat presence, based on when the customer last replied: green "Active now" if
   // just now, otherwise their last-reply time in grey italics.
   const custStatus = (m) => (m < 3
@@ -524,7 +584,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     { from: 'bot', text: 'Thanks for sharing those details. This needs a closer look, so I\u2019m connecting you to a Customer Correspondence Officer who can assist you further.' }
   ].map((m, i) => ({ ...m, right: m.from === 'user', key: i })) : [];
 
-  const urgentActive = active.filter((id) => people[id].urgency === 'urgent').length;
+  const urgentActive = active.filter((id) => peopleView[id].urgency === 'urgent').length;
   // AVG RESPONSE TIME — mean accept→resolve over cases resolved this session (live, '—' until the first).
   const avgRespLabel = respDurations.length
     ? fmtDuration(respDurations.reduce((a, b) => a + b, 0) / respDurations.length)
@@ -567,6 +627,10 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
         @keyframes pulsering{0%{transform:scale(1);opacity:.7}70%{transform:scale(2.4);opacity:0}100%{opacity:0}}
         @keyframes msgIn{from{transform:translateY(6px)}to{transform:none}}
+        @keyframes cpfShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-2px)}40%{transform:translateX(2px)}60%{transform:translateX(-2px)}80%{transform:translateX(2px)}}
+        @keyframes cpfSlideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+        .cpf-card-shake{animation:cpfShake 0.5s ease-in-out infinite}
+        .cpf-ago-trigger{cursor:pointer;text-decoration:underline;text-decoration-style:dotted}
         .cpf-card-hover{transition:transform .18s,box-shadow .18s,border-color .18s}
         .cpf-card-hover:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(16,24,40,.10);border-color:#d8dbe0}
         .cpf-stat-card{transition:box-shadow .18s}
@@ -580,7 +644,32 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         .cpf-emo{position:relative;display:flex}
         .cpf-emo-tip{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(-4px);background:#1c1c1c;color:#fff;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:5}
         .cpf-emo:hover .cpf-emo-tip{opacity:1;transform:translateX(-50%) translateY(0)}
+        .cpf-urgent-badge{transition:filter .15s,box-shadow .15s}.cpf-urgent-badge:hover{filter:brightness(0.94)}
       `}</style>
+
+      {/* Urgency ping banners — one per overdue query, dismissible, stack top-right */}
+      <div style={{ position: 'fixed', top: 20, right: 20, display: 'flex', flexDirection: 'column', gap: 10, zIndex: 999, maxWidth: 340 }}>
+        {banners.map((b) => (
+          <div
+            key={b.bannerId}
+            onClick={() => { accept(b.id); dismissBanner(b.bannerId); }}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#fff3cd', border: '1px solid #f0c36d', color: '#1c1c1c', borderRadius: 10, padding: '12px 14px', boxShadow: '0 8px 24px rgba(16,24,40,.16)', animation: 'cpfSlideIn 0.3s ease-out', cursor: 'pointer' }}
+          >
+            <span style={{ fontSize: 15.5, fontWeight: 600, lineHeight: 1.4, flex: 1 }}>
+              ⏰ Query unanswered for 60 minutes — please review. <strong>({b.name})</strong>
+            </span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); dismissBanner(b.bannerId); }}
+              aria-label="Dismiss"
+              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#1c1c1c', fontSize: 16, lineHeight: 1, padding: 2, flex: 'none' }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
 
       <NavRail
         collapsed={navCollapsed}
@@ -635,15 +724,13 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           {queries.length > 0 ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
               {queries.map((p) => (
-                <div key={p.id} className="cpf-card-hover" onClick={() => accept(p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div key={p.id} className={`cpf-card-hover${overdueIds.has(p.id) ? ' cpf-card-shake' : ''}`} onClick={() => accept(p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                   <div style={{ height: 6, background: sentColor(p.sentiment) }} />
                   <div style={{ padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1 }}>{p.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
-                        {p.urgency === 'urgent' && (
-                          <span style={{ fontSize: 26, fontWeight: 800, color: '#ca2424', lineHeight: 1 }}>!</span>
-                        )}
+                        <UrgentBadge urgent={p.urgency === 'urgent'} onToggle={(e) => { e.stopPropagation(); toggleUrgent(p.id); }} />
                         <div className="cpf-emo" style={{ flex: 'none' }}>
                           <div className="cpf-emo-tip">
                             {sentLabel(p.sentiment)}
@@ -662,7 +749,14 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                     <span style={{ fontSize: 16, fontWeight: 600, marginTop: 2, lineHeight: 1.2 }}>{p.subject}</span>
                     <span style={{ fontSize: 13, fontWeight: 400, color: '#667085', lineHeight: 1.45 }}>{p.preview}</span>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 12 }}>
-                      <span style={{ fontStyle: 'italic', fontSize: 13, color: '#9a9a9a' }}>{fmt(p.mins)}</span>
+                      <span
+                        className="cpf-ago-trigger"
+                        title="Click to simulate this query going overdue"
+                        onClick={(e) => { e.stopPropagation(); flagOverdue(p.id, p.name); }}
+                        style={{ fontStyle: 'italic', fontSize: 13, color: '#9a9a9a' }}
+                      >
+                        {fmt(p.mins)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -715,9 +809,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
                   <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: sentColor(row.sentiment), opacity: row.idle ? .45 : 1 }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: row.idle ? '#555' : '#1c1c1c' }}>{row.name}</span>
-                    {row.showAlert && !row.idle && (
-                      <span style={{ fontSize: 20, fontWeight: 800, color: '#ca2424', lineHeight: 1, flex: 'none' }}>!</span>
-                    )}
+                    <UrgentBadge urgent={row.urgency === 'urgent'} onToggle={(e) => { e.stopPropagation(); toggleUrgent(row.id); }} />
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 300, color: row.idle ? '#777' : '#444', display: 'block', marginTop: 4, lineHeight: 1.35, maxHeight: 36, overflow: 'hidden' }}>{row.preview}</span>
                   {row.idle
@@ -1051,6 +1143,20 @@ function StatCard({ value, label, sub, subColor, accent, icon }) {
         </span>
       </div>
     </div>
+  );
+}
+// Urgency toggle badge — red "!" when urgent, greyed out otherwise. Click to flip it.
+function UrgentBadge({ urgent, onToggle }) {
+  return (
+    <button
+      type="button"
+      className="cpf-urgent-badge"
+      onClick={onToggle}
+      title={urgent ? 'Click to unmark as urgent' : 'Click to mark as urgent'}
+      style={{ appearance: 'none', WebkitAppearance: 'none', width: 28, height: 28, padding: 0, margin: 0, flex: 'none', borderRadius: '50%', border: 'none', cursor: 'pointer', background: urgent ? '#ca2424' : '#e3e5e5', color: urgent ? '#fff' : '#9a9a9a', fontSize: 18, fontWeight: 800, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      !
+    </button>
   );
 }
 function Field({ label, value }) {
