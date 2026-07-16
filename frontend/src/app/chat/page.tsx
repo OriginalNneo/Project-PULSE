@@ -8,6 +8,7 @@ interface Message {
   role: Role;
   content: string;
   timestamp: string;
+  offer?: boolean; // bot suggested / promised a human officer — render the connect button
 }
 
 // In dev we call the backend directly (NEXT_PUBLIC_BACKEND_URL in .env.local)
@@ -47,6 +48,7 @@ export default function ChatPage() {
   const [language, setLanguage] = useState("en");
   const [activeLangLabel, setActiveLangLabel] = useState("English");
   const [isSending, setIsSending] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Voice-note demo (scenario 2): clear → transcribed & answered; unclear → error.
   const [isRecording, setIsRecording] = useState(false);
@@ -81,7 +83,18 @@ export default function ChatPage() {
       const json = await res.json();
       const reply: string =
         json?.data?.content ?? "Sorry, I couldn't read a reply from PULSE just now. Please try again.";
-      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString() }]);
+      // Same handoff detection as the CPF portal widget (kept in sync — see cpf/page.tsx):
+      // user asked for a human, the query touches personal data, or the bot's own reply
+      // promises a handoff. Without this the bot can say "you'll be transferred shortly"
+      // with no way to actually get transferred.
+      const q = queryText.toLowerCase();
+      const asked =
+        /\b(officer|representative|real person|live (?:agent|person|chat)|customer service)\b/.test(q) ||
+        (/\b(agent|human|staff|someone|somebody|person)\b/.test(q) && /\b(speak|talk|connect|transfer|chat|refer|reach|contact|put|get|want|need)\b/.test(q));
+      const privateInfo = json?.data?.intent === "personal_data";
+      const r = reply.toLowerCase();
+      const offered = r.includes("officer") && /\b(connect|redirect|transfer|shortly|with you|reply|escalat|hand(?:ing)? (?:you )?over)\b/.test(r);
+      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString(), offer: asked || privateInfo || offered }]);
     } catch (err) {
       setError("Sorry, I couldn't reach PULSE. Please check your connection and try again.");
     } finally {
@@ -113,17 +126,27 @@ export default function ChatPage() {
     void runQuery(`🎤 ${CLEAR_TRANSCRIPT}`, CLEAR_TRANSCRIPT); // clear → transcribed & answered
   }
 
-  function connectOfficer() {
+  // Real handoff (was a stub that only printed a canned message): escalate to the CCU
+  // queue carrying this conversation, then continue live on the Text Us page — the same
+  // flow as the CPF portal widget.
+  async function connectOfficer() {
+    if (isConnecting) return;
+    setIsConnecting(true);
     setVoiceError(false);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "agent",
-        content:
-          "Connecting you to a Customer Correspondence Officer — please hold while we transfer you. An officer will continue this conversation with you shortly.",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
+    const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await fetch(`${API_BASE}/webchat/${sessionId}/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationHistory: messages.map((m) => ({ role: m.role, content: m.content })),
+          language,
+        }),
+      });
+    } catch { /* proceed anyway — the Text Us page can still resume this session */ }
+    window.location.href = `/textus?s=${encodeURIComponent(sessionId)}`;
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -150,6 +173,11 @@ export default function ChatPage() {
             <p>
               <strong>{m.role === "user" ? "You" : "PULSE"}:</strong> {m.content}
             </p>
+            {m.role === "agent" && m.offer && (
+              <button type="button" onClick={() => void connectOfficer()} disabled={isConnecting}>
+                👤 {isConnecting ? "Connecting you to an officer…" : "Click here to talk to a real person →"}
+              </button>
+            )}
           </div>
         ))}
         {isSending && <p aria-live="polite">PULSE is thinking…</p>}
