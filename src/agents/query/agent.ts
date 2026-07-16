@@ -23,10 +23,45 @@ export const BASE_SYSTEM_PROMPT = `You are PULSE, a warm, knowledgeable CPF assi
 4. Begin the message with ONE relevant emoji (💰 CPF/money, 🏠 housing, 🏥 health, 📅 age/dates, ℹ️ general). At most one more emoji before a section heading. No decorative emoji.
 5. Quote exact figures — dollar amounts, percentages, ages, dates — from the retrieved information. Never round, estimate or invent. Spell out an acronym the first time you use it, e.g. "Retirement Account (RA)".
 6. NEVER include links, URLs, or web addresses of any kind (no "cpf.gov.sg", no "https://…"). Government agencies never send links. Refer to "the official CPF website" in words instead.
-7. Respond in the user's language, keeping this same warm, plain tone.
+7. Respond in the reply language named at the end of the context — never any other language — keeping this same warm, plain tone.
 8. If asked about a user's personal balance, contributions or payout: say clearly that you cannot access personal account data, tell them to log in to the official CPF website (in words — no link), and offer a CPF officer. Do NOT mention phone numbers or hotlines.
 
 Do NOT say you cannot answer if the retrieved information covers the topic. Do NOT pad the answer or add disclaimers like "please consult a financial advisor" for public CPF information.`;
+
+// Spelled-out names for the reply-language directive — a bare ISO code ("Respond in: zh")
+// is a weaker anchor for the LLM than the language's own name.
+const LANG_NAMES: Record<string, string> = {
+  en: "English",
+  zh: "Simplified Chinese (中文)",
+  ms: "Malay (Bahasa Melayu)",
+  ta: "Tamil (தமிழ்)",
+  hi: "Hindi",
+  ml: "Malayalam",
+  pa: "Punjabi",
+};
+
+// Script ranges for the non-Latin supported languages, used to catch replies that came
+// back in the wrong language. GLM drifts into Chinese when the target language isn't
+// pinned hard — a drifted reply must never be shown as-is, and never cached.
+const LANG_SCRIPTS: Partial<Record<Language, RegExp>> = {
+  zh: /[㐀-䶿一-鿿]/,
+  ta: /[஀-௿]/,
+  hi: /[ऀ-ॿ]/,
+  pa: /[਀-੿]/,
+  ml: /[ഀ-ൿ]/,
+};
+const NON_LATIN_CHARS = /[㐀-䶿一-鿿஀-௿ऀ-ॿ਀-੿ഀ-ൿ]/g;
+
+// True when the reply's script contradicts the target language: a non-Latin target whose
+// script is absent, or a Latin target (en/ms) where non-Latin characters outnumber Latin
+// letters (a quoted term like "公积金" inside an English sentence stays fine).
+export function replyLanguageLooksWrong(text: string, language: Language): boolean {
+  const expected = LANG_SCRIPTS[language];
+  if (expected) return !expected.test(text);
+  const nonLatin = text.match(NON_LATIN_CHARS)?.length ?? 0;
+  const latin = text.match(/[A-Za-z]/g)?.length ?? 0;
+  return nonLatin > 2 && nonLatin > latin;
+}
 
 function buildSystemPrompt(triage?: TriageResult, emotion?: { score: number; label: string; sustained?: boolean }): string {
   let prompt = BASE_SYSTEM_PROMPT;
@@ -122,7 +157,14 @@ export async function runQueryAgent(
     .update(`${intent}|${query.toLowerCase().trim()}|${language}|${ctx.triage?.category ?? 1}|${ctx.emotion?.label ?? "neutral"}|${ctx.emotion?.sustained ? "s" : ""}|${historyStr}`)
     .digest("hex");
 
-  const cached = await getQueryCache(cacheHash).catch(() => null);
+  // Ignore (and later overwrite) cache entries whose script contradicts the target
+  // language — drifted replies written before the language guard existed poison the
+  // cache, making "English question → Chinese answer" reproducible forever.
+  let cached = await getQueryCache(cacheHash).catch(() => null);
+  if (cached && replyLanguageLooksWrong(cached.response, language)) {
+    log.warn({ cacheHash, language }, "Cached reply is in the wrong language — regenerating");
+    cached = null;
+  }
   if (cached) {
     log.info({ cacheHash, intent }, "Query response served from cache");
     return {
@@ -142,7 +184,9 @@ export async function runQueryAgent(
     `User question: "${query}"`,
     `Retrieved CPF information:\n${retrievedForLLM}`,
     state.navigationUrl ? `Source URL: ${state.navigationUrl}` : null,
-    language !== "en" ? `Respond in: ${language}. Keep using the language of the conversation above unless the user switches.` : null,
+    // Always pin the reply language — English included. Without an explicit anchor the
+    // model (GLM) drifts into Chinese on English queries.
+    `Reply language: ${LANG_NAMES[language] ?? "English"}. Write your ENTIRE reply in this language and no other.`,
   ].filter(Boolean).join("\n\n");
 
   // GLM is a thinking model; content is empty if the LLM is down or ran out of tokens
@@ -150,7 +194,23 @@ export async function runQueryAgent(
   // facts — but remember it failed so we DON'T cache a degraded answer and the officer is
   // offered (B8: the raw retrieval scaffold used to be served and cached as a real answer).
   const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion), hermesContext, [], 1024, true, { thinking: { type: "disabled" } }).catch(() => "");
-  const llmContent = rawContent.trim();
+  let llmContent = rawContent.trim();
+
+  // Language-drift guard: if the reply's script contradicts the target language,
+  // retry once with a hard directive. A still-wrong reply is delivered (better than
+  // nothing) but never cached — see the write guard below.
+  let wrongLanguage = llmContent.length > 0 && replyLanguageLooksWrong(llmContent, language);
+  if (wrongLanguage) {
+    log.warn({ userId: ctx.userId, language }, "Reply came back in the wrong language — retrying once");
+    const retry = (await callHermes(
+      `${buildSystemPrompt(ctx.triage, ctx.emotion)}\n\nCRITICAL: Your entire reply MUST be written in ${LANG_NAMES[language] ?? "English"}. Any other language is a failure.`,
+      hermesContext, [], 1024, true, { thinking: { type: "disabled" } },
+    ).catch(() => "")).trim();
+    if (retry && !replyLanguageLooksWrong(retry, language)) {
+      llmContent = retry;
+      wrongLanguage = false;
+    }
+  }
   const llmFailed = llmContent.length === 0;
   const content = stripLinks(llmContent || retrievedForLLM);
 
@@ -166,7 +226,7 @@ export async function runQueryAgent(
   // the user decides by replying *Officer*.
   const requiresHumanReview = state.blocked || state.confidence < 0.3 || state.isPersonalDataRequest || llmFailed;
 
-  if (!requiresHumanReview) {
+  if (!requiresHumanReview && !wrongLanguage) {
     await writeQueryCache({ hash: cacheHash, response: content, intent, lang: language }).catch(() => null);
   }
 

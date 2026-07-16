@@ -94,7 +94,10 @@ export default function ChatPage() {
       const privateInfo = json?.data?.intent === "personal_data";
       const r = reply.toLowerCase();
       const offered = r.includes("officer") && /\b(connect|redirect|transfer|shortly|with you|reply|escalat|hand(?:ing)? (?:you )?over)\b/.test(r);
-      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString(), offer: asked || privateInfo || offered }]);
+      // Backend semantic signal (5-layer escalation analyzer) — works regardless of the
+      // reply's language, where the regexes above only match English wording.
+      const serverOffer = json?.data?.offerOfficer === true;
+      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString(), offer: serverOffer || asked || privateInfo || offered }]);
     } catch (err) {
       setError("Sorry, I couldn't reach PULSE. Please check your connection and try again.");
     } finally {

@@ -29,6 +29,7 @@ import { consoleRoutes } from "../services/console/routes.js";
 import { copilotRoutes } from "../services/copilot/routes.js";
 import { adaptiveLocalRoutes } from "../services/adaptive-local/index.js";
 import { runMainAgent } from "../agents/main/agent.js";
+import { analyzeEscalation } from "../agents/escalation/analyzer.js";
 import { detectEmotion, synthesizeSpeech } from "../python-bridge/client.js";
 import { scoreEmotion } from "../agents/main/emotion.js";
 import { z } from "zod";
@@ -251,7 +252,12 @@ app.post("/query", async (req: Request, res: Response<ApiResponse>) => {
     { type: "query", messages, language },
     resolveCtx(req),
   );
-  res.json({ data: result });
+  // Language-independent officer signal for the web widgets. They used to re-derive
+  // this by regex-scanning the (possibly non-English) reply text, which silently
+  // dropped the "talk to a real person" button whenever the wording didn't match.
+  // Deliberately NOT requiresHumanReview — that fires on low-confidence small talk.
+  const escalation = analyzeEscalation(message, result.content, result.confidence);
+  res.json({ data: { ...result, offerOfficer: escalation.shouldEscalate || result.intent === "personal_data" } });
 });
 
 app.use(errorHandler);

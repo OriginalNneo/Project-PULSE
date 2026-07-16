@@ -325,7 +325,10 @@ function PulseWidget() {
       // will be with you shortly") must always carry the button, or the promise is a dead end.
       const reply = String(d?.content??"").toLowerCase();
       const offered = reply.includes("officer") && /\b(connect|redirect|transfer|shortly|with you|reply|escalat|hand(?:ing)? (?:you )?over)\b/.test(reply);
-      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:asked||privateInfo||offered}]);
+      // Backend semantic signal (5-layer escalation analyzer) — works regardless of the
+      // reply's language, where the regexes above only match English wording.
+      const serverOffer = d?.offerOfficer === true;
+      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:serverOffer||asked||privateInfo||offered}]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
     finally { setBusy(false); setTimeout(()=>logRef.current?.scrollTo({top:9999,behavior:"smooth"}),50); }
   }

@@ -42,6 +42,27 @@ type Lang = Language;
 // Languages we can translate into AND synthesize speech for.
 const SUPPORTED_LANGS = new Set<Lang>(["en", "zh", "ms", "ta", "hi", "ml", "pa"]);
 
+// Script ranges for the non-Latin supported languages.
+const LANG_SCRIPT: Partial<Record<Lang, RegExp>> = {
+  zh: /[㐀-䶿一-鿿]/,
+  ta: /[஀-௿]/,
+  hi: /[ऀ-ॿ]/,
+  pa: /[਀-੿]/,
+  ml: /[ഀ-ൿ]/,
+};
+
+// Decide this turn's language from the detector result. A claim of a non-Latin-script
+// language must be backed by that script actually appearing in the message — the HF/LLM
+// detectors sometimes label Singlish or short English as zh/hi, and because the switch
+// is persisted to preferred_lang, one misfire used to lock the user into Chinese replies
+// for every following English message.
+function resolveTurnLang(current: Lang, detected: { lang: string; confident: boolean } | null, text: string): Lang {
+  if (!detected || !SUPPORTED_LANGS.has(detected.lang as Lang)) return current;
+  const script = LANG_SCRIPT[detected.lang as Lang];
+  if (script && !script.test(text)) return current;
+  return detected.lang as Lang;
+}
+
 export interface ChannelButton {
   label: string;
   callbackId: string;
@@ -919,9 +940,9 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       const guiding = await findGuidingSetForQuery(queryText).catch(() => null);
       if (guiding) {
         const [detectedResult, scored] = await Promise.all([detectLangPromise, emotionPromise]);
-        const detectedLang = detectedResult?.lang ?? null;
-        if (detectedLang && SUPPORTED_LANGS.has(detectedLang as Lang) && detectedLang !== lang) {
-          lang = detectedLang as Lang;
+        const turnLang = resolveTurnLang(lang, detectedResult, queryText);
+        if (turnLang !== lang) {
+          lang = turnLang;
           prefs = { ...prefs, preferred_lang: lang };
           await upsertUserPrefs(prefs).catch(() => null);
           log.info({ userId, detectedLang: lang }, "Language auto-detected — switching response language");
@@ -959,10 +980,10 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
     // Resolve language + emotion together — both have been running since early in
     // the handler; awaiting here adds near-zero latency for either.
     const [detectedResult, turnEmotion] = await Promise.all([detectLangPromise, emotionPromise]);
-    const detectedLang = detectedResult?.lang ?? null;
     langConfident = detectedResult?.confident ?? true;
-    if (detectedLang && SUPPORTED_LANGS.has(detectedLang as Lang) && detectedLang !== lang) {
-      lang = detectedLang as Lang;
+    const turnLang = resolveTurnLang(lang, detectedResult, queryText);
+    if (turnLang !== lang) {
+      lang = turnLang;
       prefs = { ...prefs, preferred_lang: lang };
       await upsertUserPrefs(prefs).catch(() => null);
       log.info({ userId, detectedLang: lang }, "Language auto-detected — switching response language");
