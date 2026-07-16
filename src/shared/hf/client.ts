@@ -19,9 +19,9 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
   return headers;
 }
 
-async function post(model: string, init: RequestInit): Promise<Response> {
+async function post(model: string, init: RequestInit, timeoutMs = HF_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), HF_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(`${HF_BASE_URL}/models/${model}`, {
       method: "POST",
@@ -33,21 +33,28 @@ async function post(model: string, init: RequestInit): Promise<Response> {
   }
 }
 
-async function call(model: string, init: RequestInit, attempt = 0): Promise<unknown> {
+async function call(model: string, init: RequestInit, attempt = 0, timeoutMs?: number): Promise<unknown> {
   let res: Response;
   try {
-    res = await post(model, init);
+    res = await post(model, init, timeoutMs);
   } catch (err) {
+    // Timeouts/aborts and network drops happen while a serverless model cold-starts —
+    // one retry usually lands on the now-warm model. Without this, only 503s were
+    // retried and a cold Whisper meant a guaranteed "couldn't hear you" to the user.
+    if (attempt < MAX_RETRIES) {
+      log.warn({ model, err: (err as Error).message }, "HF request failed, retrying");
+      return call(model, init, attempt + 1, timeoutMs);
+    }
     throw new ExternalServiceError("hf", `request to ${model} failed: ${(err as Error).message}`);
   }
 
   // Model warming up — HF tells us how long to wait via estimated_time.
   if (res.status === 503 && attempt < MAX_RETRIES) {
     const body = (await res.json().catch(() => ({}))) as { estimated_time?: number };
-    const waitMs = Math.min((body.estimated_time ?? 5) * 1000, HF_TIMEOUT_MS);
+    const waitMs = Math.min((body.estimated_time ?? 5) * 1000, timeoutMs ?? HF_TIMEOUT_MS);
     log.warn({ model, waitMs }, "HF model loading, retrying");
     await new Promise((r) => setTimeout(r, waitMs));
-    return call(model, init, attempt + 1);
+    return call(model, init, attempt + 1, timeoutMs);
   }
 
   if (!res.ok) {
@@ -59,19 +66,19 @@ async function call(model: string, init: RequestInit, attempt = 0): Promise<unkn
 }
 
 /** JSON-in / JSON-out inference (translation, classification, etc.). */
-export function hfJson(model: string, payload: unknown): Promise<unknown> {
+export function hfJson(model: string, payload: unknown, opts?: { timeoutMs?: number }): Promise<unknown> {
   return call(model, {
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
-  });
+  }, 0, opts?.timeoutMs);
 }
 
 /** Binary-in / JSON-out inference (speech-to-text, audio emotion). */
-export function hfBinary(model: string, bytes: Uint8Array, contentType: string): Promise<unknown> {
+export function hfBinary(model: string, bytes: Uint8Array, contentType: string, opts?: { timeoutMs?: number }): Promise<unknown> {
   return call(model, {
     headers: authHeaders({ "Content-Type": contentType }),
     body: new Blob([bytes], { type: contentType }),
-  });
+  }, 0, opts?.timeoutMs);
 }
 
 /** JSON-in / binary-out inference (text-to-speech). Returns the raw audio bytes. */

@@ -153,7 +153,7 @@ async function officerButtonFor(lang: Lang): Promise<ChannelButton[][]> {
 }
 
 const VOICE_CLARITY_PROMPT =
-  'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. Decide if it is a usable message a real person might send — a question, request, greeting or short answer, even in Singlish or broken English. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random or repeated words, or generic off-topic filler unrelated to getting help (e.g. "Am I right?", "thank you for watching", "uh huh"). Reply with ONE word: CLEAR or UNCLEAR.';
+  'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. The message may be in ANY language — English, Singlish, Mandarin, Malay, Tamil, Hindi, or a mix — and a non-English message is just as valid. Decide if it is a usable message a real person might send — a question, request, greeting or short answer in any of those languages, even broken or colloquial. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random or repeated words, or generic off-topic filler unrelated to getting help (e.g. "Am I right?", "thank you for watching", "uh huh"). Reply with ONE word: CLEAR or UNCLEAR.';
 
 // True if a voice transcription looks like it came from an unclear/muffled recording.
 // Uses the LLM with thinking disabled (~1-2s) so it judges the actual transcription.
@@ -837,12 +837,20 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       await sendUnclearVoiceReply(channel, userId, lang, prefs);
       return;
     }
-    // Unclear-voice detection: empty/garbled transcription, a too-short recording, or an
-    // incoherent transcription (Whisper hallucinations like "Am I right?" for muffled audio).
-    const shortAudio = msg.durationSec != null && msg.durationSec < 1.2;
-    if (!messageText || messageText.length < 5 || shortAudio || (await transcriptionLooksUnclear(messageText))) {
+    // Unclear-voice detection: empty/garbled transcription, an accidental-tap recording,
+    // or an incoherent transcription (Whisper hallucinations like "Am I right?" for
+    // muffled audio). CJK/Indic scripts pack a full sentence into a few characters
+    // ("我要取钱" is a complete query at 4 chars), so the length gate is script-aware,
+    // and a sub-1.2s clip that still produced a usable transcript is answered rather
+    // than rejected — only sub-0.6s (accidental tap) is rejected on duration alone.
+    const denseScript = /[㐀-䶿一-鿿぀-ヿ가-힯஀-௿ऀ-ॿ਀-੿ഀ-ൿ]/.test(messageText);
+    const minLen = denseScript ? 2 : 5;
+    const tapAudio = msg.durationSec != null && msg.durationSec < 0.6;
+    if (!messageText || messageText.length < minLen || tapAudio || (await transcriptionLooksUnclear(messageText))) {
       log.info({ userId, messageText, durationSec: msg.durationSec }, "Voice message judged unclear — sending error + officer option");
-      const noisy = msg.durationSec != null && msg.durationSec >= 2 && messageText.length / msg.durationSec < 4;
+      // Chars-per-second is an English-rate heuristic — normal Mandarin runs ~3-5
+      // chars/sec, so it must not brand dense-script speech as background noise.
+      const noisy = msg.durationSec != null && msg.durationSec >= 2 && !denseScript && messageText.length / msg.durationSec < 4;
       await sendUnclearVoiceReply(channel, userId, lang, prefs, noisy);
       return;
     }

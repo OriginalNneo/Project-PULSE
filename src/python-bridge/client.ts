@@ -71,9 +71,14 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 // ── Speech-to-text (Whisper via HF) ───────────────────────────────────────────
+// Whisper cold-starts on HF serverless routinely exceed the default 30s timeout, which
+// used to abort the call and tell the citizen their (perfectly clear) audio couldn't be
+// understood. STT gets its own generous budget; warm calls still return in ~1-2s.
+const HF_STT_TIMEOUT_MS = parseInt(process.env.HF_STT_TIMEOUT_MS ?? "", 10) || 90000;
+
 export async function transcribeAudio(audioBase64: string, mimeType: string): Promise<TranscribeResult> {
   log.info({ mimeType, model: STT_MODEL }, "Transcribing audio via HF");
-  const out = (await hfBinary(STT_MODEL, base64ToBytes(audioBase64), mimeType)) as { text?: string };
+  const out = (await hfBinary(STT_MODEL, base64ToBytes(audioBase64), mimeType, { timeoutMs: HF_STT_TIMEOUT_MS })) as { text?: string };
   const text = (out?.text ?? "").trim();
   if (!text) throw new ExternalServiceError("hf", "transcription returned empty text");
   return { text, language: "auto", confidence: 0.9 };
