@@ -622,6 +622,11 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   /* --------------------------------------------------------------- view --- */
 
   return (
+    // CSS transforms don't shrink an element's layout box, only how it's painted — so the
+    // scale(0.8) child below still occupies its full un-scaled (~125%) size for layout purposes.
+    // This wrapper clips that oversized box to the viewport so it can never leak into page-level
+    // scroll; all real scrolling happens in the `cpf-scroll` panels inside.
+    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
     <div style={{ width: 'calc(100vw / 0.8)', height: 'calc(100vh / 0.8)', transform: 'scale(0.8)', transformOrigin: 'top left', display: 'flex', flexDirection: 'row', background: '#f5f6f8', overflow: 'hidden', color: '#1c1c1c', fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
       <style>{`
         @keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
@@ -827,7 +832,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
 
           {/* messenger */}
           {hasOpen ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#e9e2d9' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, background: '#e9e2d9' }}>
               <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 14, padding: '11px 22px', background: '#f4f4f4', boxShadow: '0 2px 5px rgba(0,0,0,.12)', zIndex: 2 }}>
                 <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#d9d9d9', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                   <svg viewBox="0 0 24 24" width="34" height="34" fill="#727272"><circle cx="12" cy="8" r="4" /><path d="M4 20.5c0-4.2 3.8-6.2 8-6.2s8 2 8 6.2V21H4z" /></svg>
@@ -1016,6 +1021,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         </div>
       )}
       </div>
+    </div>
     </div>
   );
 }
