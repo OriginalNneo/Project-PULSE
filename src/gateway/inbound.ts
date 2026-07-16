@@ -153,7 +153,7 @@ async function officerButtonFor(lang: Lang): Promise<ChannelButton[][]> {
 }
 
 const VOICE_CLARITY_PROMPT =
-  'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. The message may be in ANY language — English, Singlish, Mandarin, Malay, Tamil, Hindi, or a mix — and a non-English message is just as valid. Decide if it is a usable message a real person might send — a question, request, greeting or short answer in any of those languages, even broken or colloquial. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random or repeated words, or generic off-topic filler unrelated to getting help (e.g. "Am I right?", "thank you for watching", "uh huh"). Reply with ONE word: CLEAR or UNCLEAR.';
+  'A voice message to a Singapore CPF chatbot was transcribed by speech-to-text. The message may be in ANY language — English, Singlish, Mandarin, Malay, Tamil, Hindi, or a mix — and a non-English message is just as valid. Decide if a real person deliberately said it: a question, request, greeting, short answer, or even a mic test ("testing one two three", "hello can you hear me") counts as CLEAR. Answer UNCLEAR only if it looks like a garbled mis-transcription of unclear audio: random word salad, heavily repeated fragments, or a stock caption speech-to-text invents for near-silence (e.g. "thank you for watching", "uh huh", "."). When in doubt, answer CLEAR. Reply with ONE word: CLEAR or UNCLEAR.';
 
 // True if a voice transcription looks like it came from an unclear/muffled recording.
 // Uses the LLM with thinking disabled (~1-2s) so it judges the actual transcription.

@@ -48,11 +48,16 @@ async function call(model: string, init: RequestInit, attempt = 0, timeoutMs?: n
     throw new ExternalServiceError("hf", `request to ${model} failed: ${(err as Error).message}`);
   }
 
-  // Model warming up — HF tells us how long to wait via estimated_time.
-  if (res.status === 503 && attempt < MAX_RETRIES) {
-    const body = (await res.json().catch(() => ({}))) as { estimated_time?: number };
+  // Transient upstream failures: 503 = model warming (HF suggests a wait via
+  // estimated_time); 504/502/500 = the router's own gateway timing out on a cold
+  // model (returns an HTML error page); 429 = momentary rate limit. All are worth
+  // one retry — a cold Whisper routinely 504s once and serves the retry.
+  if ([500, 502, 503, 504, 429].includes(res.status) && attempt < MAX_RETRIES) {
+    const body = res.status === 503
+      ? ((await res.json().catch(() => ({}))) as { estimated_time?: number })
+      : {};
     const waitMs = Math.min((body.estimated_time ?? 5) * 1000, timeoutMs ?? HF_TIMEOUT_MS);
-    log.warn({ model, waitMs }, "HF model loading, retrying");
+    log.warn({ model, status: res.status, waitMs }, "HF transient error, retrying");
     await new Promise((r) => setTimeout(r, waitMs));
     return call(model, init, attempt + 1, timeoutMs);
   }
