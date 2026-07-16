@@ -63,12 +63,26 @@ router.post("/:sessionId/connect", async (req: Request, res: Response) => {
   res.json({ ok: true, userId });
 });
 
-// POST /webchat/:sessionId — a citizen message from the Text Us page. Runs the shared
-// inbound pipeline; with an active case it relays straight to the assigned officer.
+// POST /webchat/:sessionId — a citizen message from the Text Us page (text OR a voice note).
+// Runs the shared inbound pipeline; voice is transcribed (HF Whisper) then, with an active
+// case, relayed to the assigned officer just like a typed message.
 router.post("/:sessionId", async (req: Request, res: Response) => {
   const sessionId = req.params.sessionId!;
-  const text = (req.body as { text?: string })?.text?.trim();
-  if (!text) { res.status(400).json({ error: "text required" }); return; }
+  const body = req.body as { text?: string; audioBase64?: string; mimeType?: string; durationSec?: number };
+  const text = body?.text?.trim();
+
+  if (body?.audioBase64) {
+    void processInbound(makeWebChannel(sessionId), {
+      userKey: sessionId,
+      audioBase64: body.audioBase64,
+      mimeType: body.mimeType || "audio/webm",
+      durationSec: typeof body.durationSec === "number" ? body.durationSec : undefined,
+    }).catch((err: unknown) => log.error(err, "Web voice processing failed"));
+    res.json({ ok: true });
+    return;
+  }
+
+  if (!text) { res.status(400).json({ error: "text or audioBase64 required" }); return; }
 
   void processInbound(makeWebChannel(sessionId), { userKey: sessionId, text }).catch((err: unknown) => {
     log.error(err, "Web inbound processing failed");

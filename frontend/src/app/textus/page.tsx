@@ -141,6 +141,10 @@ export default function TextUsDemoPage() {
   const [active, setActive] = useState<PendingAction>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const cursorRef = useRef(0);
+  const [recording, setRecording] = useState(false);
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recStartRef = useRef(0);
 
   const live = sessionId !== null;
   const tampered = !live && input.trim() !== PREFILL.trim();
@@ -215,6 +219,69 @@ export default function TextUsDemoPage() {
   function restore() {
     setInput(PREFILL);
     setError(null);
+  }
+
+  // ── Voice notes (live mode): record in-browser, send audio to be transcribed + relayed ──
+  function pickMime(): string {
+    const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    if (typeof MediaRecorder === "undefined") return "";
+    for (const c of cands) { try { if (MediaRecorder.isTypeSupported(c)) return c; } catch { /* ignore */ } }
+    return "";
+  }
+
+  function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onloadend = () => { const s = String(r.result || ""); resolve(s.slice(s.indexOf(",") + 1)); };
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  }
+
+  async function startRecording() {
+    setError(null);
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setError("Voice notes aren't supported on this browser."); return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Microphone access was blocked. Please allow the mic and try again."); return;
+    }
+    const mime = pickMime();
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    chunksRef.current = [];
+    mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const durationSec = (Date.now() - recStartRef.current) / 1000;
+      const blob = new Blob(chunksRef.current, { type: mr.mimeType || mime || "audio/webm" });
+      if (blob.size < 500 || durationSec < 0.5) {
+        setError("That was too short — hold the mic a moment longer."); return;
+      }
+      const audioBase64 = await blobToBase64(blob);
+      setMessages((m) => [...m, { from: "user", text: "🎤 Voice message" }]);
+      try {
+        await fetch(`${API_BASE}/webchat/${sessionId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audioBase64, mimeType: blob.type, durationSec }),
+        });
+      } catch {
+        setError("Couldn't send the voice message — please try again.");
+      }
+    };
+    mediaRef.current = mr;
+    recStartRef.current = Date.now();
+    mr.start();
+    setRecording(true);
+  }
+
+  function stopRecording() {
+    const mr = mediaRef.current;
+    if (mr && mr.state !== "inactive") mr.stop();
+    setRecording(false);
   }
 
   // Phone dimensions
@@ -364,31 +431,43 @@ export default function TextUsDemoPage() {
             <button aria-label="Emoji" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, lineHeight: 1, display: "flex", alignSelf: "center" }}>
               <SmileIcon />
             </button>
-            <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "flex-end" }}>
-              <textarea
-                aria-label="Message"
-                value={input}
-                onChange={(e) => { setInput(e.target.value); if (error) setError(null); }}
-                rows={2}
-                style={{
-                  flex: 1, resize: "none",
-                  border: tampered ? "1.5px solid #e0a23a" : "1px solid transparent",
-                  outline: "none", borderRadius: 20, padding: "10px 34px 10px 14px",
-                  fontSize: 14, fontFamily: "inherit", lineHeight: 1.45, color: WA_TEXT,
-                  background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.08)",
-                }}
-              />
-              <span style={{ position: "absolute", right: 10, bottom: 11, pointerEvents: "none", display: "flex" }}>
-                <CameraIcon />
-              </span>
-            </div>
-            {input.trim() ? (
+            {recording ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, height: 44, padding: "0 16px", borderRadius: 20, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#e0392b", animation: "wa-rec 1s ease-in-out infinite", flexShrink: 0 }} />
+                <span style={{ fontSize: 14, color: WA_SUBTEXT }}>Recording… tap ▸ to send</span>
+                <style>{`@keyframes wa-rec{0%,100%{opacity:1}50%{opacity:.25}}`}</style>
+              </div>
+            ) : (
+              <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "flex-end" }}>
+                <textarea
+                  aria-label="Message"
+                  value={input}
+                  onChange={(e) => { setInput(e.target.value); if (error) setError(null); }}
+                  rows={2}
+                  style={{
+                    flex: 1, resize: "none",
+                    border: tampered ? "1.5px solid #e0a23a" : "1px solid transparent",
+                    outline: "none", borderRadius: 20, padding: "10px 34px 10px 14px",
+                    fontSize: 14, fontFamily: "inherit", lineHeight: 1.45, color: WA_TEXT,
+                    background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.08)",
+                  }}
+                />
+                <span style={{ position: "absolute", right: 10, bottom: 11, pointerEvents: "none", display: "flex" }}>
+                  <CameraIcon />
+                </span>
+              </div>
+            )}
+            {input.trim() && !recording ? (
               <button onClick={onSend} aria-label="Send" style={{ flexShrink: 0, boxSizing: "border-box", width: 42, height: 42, padding: 0, borderRadius: "50%", border: "none", cursor: "pointer", background: WA_GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <SendIcon />
               </button>
             ) : (
-              <button aria-label="Voice message" style={{ flexShrink: 0, boxSizing: "border-box", width: 42, height: 42, padding: 0, borderRadius: "50%", border: "none", cursor: "pointer", background: WA_GREEN, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <MicIcon />
+              <button
+                onClick={live ? (recording ? stopRecording : startRecording) : undefined}
+                aria-label={recording ? "Stop and send voice message" : "Record voice message"}
+                title={live ? undefined : "Open a live Text Us chat to send voice notes"}
+                style={{ flexShrink: 0, boxSizing: "border-box", width: 42, height: 42, padding: 0, borderRadius: "50%", border: "none", cursor: live ? "pointer" : "default", background: recording ? "#e0392b" : WA_GREEN, opacity: live ? 1 : 0.6, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {recording ? <SendIcon /> : <MicIcon />}
               </button>
             )}
           </div>
