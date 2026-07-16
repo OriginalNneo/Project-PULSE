@@ -500,7 +500,8 @@ export default function TextUsDemoPage() {
                     flex: 1, resize: "none",
                     border: tampered ? "1.5px solid #e0a23a" : "1px solid transparent",
                     outline: "none", borderRadius: 20, padding: "10px 34px 10px 14px",
-                    fontSize: 14, fontFamily: "inherit", lineHeight: 1.45, color: WA_TEXT,
+                    // 16px+ prevents iOS Safari's auto-zoom on focus (real WhatsApp is ~17px anyway)
+                    fontSize: 16, fontFamily: "inherit", lineHeight: 1.45, color: WA_TEXT,
                     background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.08)",
                   }}
                 />

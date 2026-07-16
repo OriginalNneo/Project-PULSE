@@ -362,7 +362,7 @@ function PulseWidget() {
           </div>
           <div style={{flexShrink:0,padding:"9px 11px",borderTop:`1px solid ${CPF.border}`,display:"flex",gap:8,background:CPF.white}}>
             <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Type your question…" rows={2} disabled={busy}
-              style={{flex:1,resize:"none",border:`1.5px solid ${CPF.border}`,borderRadius:6,padding:"7px 9px",fontSize:13,fontFamily:FONT,outline:"none"}} />
+              style={{flex:1,resize:"none",border:`1.5px solid ${CPF.border}`,borderRadius:6,padding:"7px 9px",fontSize:wMobile?16:13,fontFamily:FONT,outline:"none"}} />
             <button onClick={()=>void send()} disabled={busy||!text.trim()} style={{appearance:"none",WebkitAppearance:"none",boxSizing:"border-box",width:38,height:38,padding:0,margin:0,flexShrink:0,borderRadius:"50%",border:"none",background:busy||!text.trim()?"#ccc":CPF.teal,color:CPF.white,cursor:busy||!text.trim()?"default":"pointer",alignSelf:"flex-end",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon size={16} path={ICONS.send} /></button>
           </div>
           {/* Persistent disclaimer — always visible while the widget is open (scenario: policy ambiguity) */}
