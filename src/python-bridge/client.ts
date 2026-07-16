@@ -76,8 +76,9 @@ function base64ToBytes(b64: string): Uint8Array {
 // that only depends on this box. HF stays as fallback for when the local service
 // is down (e.g. mid-redeploy).
 const LOCAL_STT_URL = process.env.LOCAL_STT_URL ?? "http://127.0.0.1:3002";
-// 2-core CPU inference — a long voice note can take ~20-30s; warm short notes ~2-5s.
-const LOCAL_STT_TIMEOUT_MS = parseInt(process.env.LOCAL_STT_TIMEOUT_MS ?? "", 10) || 60000;
+// 2-core CPU inference — confident short notes ~2-5s, but the accuracy-model rerun
+// (unsure language/words) costs ~26s more, and long notes scale with duration.
+const LOCAL_STT_TIMEOUT_MS = parseInt(process.env.LOCAL_STT_TIMEOUT_MS ?? "", 10) || 120000;
 // Whisper cold-starts on HF serverless routinely exceed the default 30s timeout, which
 // used to abort the call and tell the citizen their (perfectly clear) audio couldn't be
 // understood. STT gets its own generous budget; warm calls still return in ~1-2s.
