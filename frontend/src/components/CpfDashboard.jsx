@@ -18,6 +18,11 @@ const OFFICER_ID = 'patricia-lam';
 // reads "60 minutes" regardless of this value; only the trigger timing is adjustable.
 const URGENCY_THRESHOLD_MS = 5 * 60 * 1000;
 
+// Must match the root container's `transform: scale(...)` below — used to convert a raw
+// mouse click (viewport pixels) into that transformed container's local coordinate space
+// so the right-click "Mark as urgent" menu lands under the cursor instead of offset.
+const DASHBOARD_SCALE = 0.8;
+
 // Mock fallbacks for fields the backend queue does NOT carry (identity + financials).
 const MOCK_C = 'Singapore Citizen';
 const MOCK_BAL = { oa: '$12,430', ma: '$4,862', ra: '$8,205' };
@@ -313,6 +318,8 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
   const [resolved, setResolved] = useState(0);            // # of Resolve clicks this session
   const [overdueIds, setOverdueIds] = useState(() => new Set()); // incoming query ids currently shaking
   const [banners, setBanners] = useState([]); // [{ bannerId, id, name }] — urgency-ping notifications
+  const [urgencyOverrides, setUrgencyOverrides] = useState({}); // id → 'urgent' | 'downgrade', from the right-click menu
+  const [ctxMenu, setCtxMenu] = useState(null); // { x, y, id } — x/y already converted to the dashboard's local (pre-scale) coordinates
   const [respDurations, setRespDurations] = useState([]); // accept→resolve durations (ms) this session
   const [threads, setThreads] = useState(MOCK_THREADS);
   const [translations, setTranslations] = useState({}); // original text → { translated, showing, loading, error }
@@ -519,21 +526,51 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
 
   /* ---- derived view data ---- */
 
+  // Applies the right-click "Mark/Unmark as urgent" overrides on top of each person's natural
+  // urgency, without touching the underlying `people` state (client-side only, like the rest
+  // of this dashboard's demo state).
+  const peopleView = useMemo(() => {
+    const ids = Object.keys(urgencyOverrides);
+    if (!ids.length) return people;
+    const next = { ...people };
+    for (const id of ids) {
+      if (!next[id]) continue;
+      const ov = urgencyOverrides[id];
+      const urgency = ov === 'urgent' ? 'urgent' : (next[id].urgency === 'urgent' ? 'medium' : next[id].urgency);
+      next[id] = { ...next[id], urgency };
+    }
+    return next;
+  }, [people, urgencyOverrides]);
+
+  const toggleUrgent = useCallback((id) => {
+    setUrgencyOverrides((prev) => {
+      const currentlyUrgent = peopleView[id]?.urgency === 'urgent';
+      return { ...prev, [id]: currentlyUrgent ? 'downgrade' : 'urgent' };
+    });
+    setCtxMenu(null);
+  }, [peopleView]);
+
+  const openCtxMenu = useCallback((e, id) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX / DASHBOARD_SCALE, y: e.clientY / DASHBOARD_SCALE, id });
+  }, []);
+
   const queries = useMemo(() => {
     let ids = incoming.slice();
-    if (filter !== 'all') ids = ids.filter((id) => people[id].urgency === filter);
+    if (filter !== 'all') ids = ids.filter((id) => peopleView[id].urgency === filter);
     ids.sort((a, b) => {
-      const pa = people[a], pb = people[b];
+      const pa = peopleView[a], pb = peopleView[b];
       if (sort === 'oldest') return pb.mins - pa.mins;
       if (sort === 'urgency') return urgRank(pb.urgency) - urgRank(pa.urgency) || pa.mins - pb.mins;
       if (sort === 'sentiment') return sentRank(pb.sentiment) - sentRank(pa.sentiment) || pa.mins - pb.mins;
       return pa.mins - pb.mins;
     });
-    return ids.map((id) => people[id]);
-  }, [incoming, filter, sort]);
+    return ids.map((id) => peopleView[id]);
+  }, [incoming, filter, sort, peopleView]);
 
   const chatRows = useMemo(() => active.map((id) => {
-    const p = people[id];
+    const p = peopleView[id];
     const t = threads[id] || [];
     const last = t[t.length - 1];
     // "Inactive" = no message from EITHER side (officer replies count) for over 2h.
@@ -552,7 +589,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
       showAlert: p.urgency === 'urgent',
       idle, waitH, custMins,
     };
-  }), [active, threads, openChatId]);
+  }), [active, threads, openChatId, peopleView]);
   // Active-chat presence, based on when the customer last replied: green "Active now" if
   // just now, otherwise their last-reply time in grey italics.
   const custStatus = (m) => (m < 3
@@ -584,7 +621,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
     { from: 'bot', text: 'Thanks for sharing those details. This needs a closer look, so I\u2019m connecting you to a Customer Correspondence Officer who can assist you further.' }
   ].map((m, i) => ({ ...m, right: m.from === 'user', key: i })) : [];
 
-  const urgentActive = active.filter((id) => people[id].urgency === 'urgent').length;
+  const urgentActive = active.filter((id) => peopleView[id].urgency === 'urgent').length;
   // AVG RESPONSE TIME — mean accept→resolve over cases resolved this session (live, '—' until the first).
   const avgRespLabel = respDurations.length
     ? fmtDuration(respDurations.reduce((a, b) => a + b, 0) / respDurations.length)
@@ -644,6 +681,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
         .cpf-emo{position:relative;display:flex}
         .cpf-emo-tip{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(-4px);background:#1c1c1c;color:#fff;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:5}
         .cpf-emo:hover .cpf-emo-tip{opacity:1;transform:translateX(-50%) translateY(0)}
+        .cpf-ctx-item{transition:background .12s}.cpf-ctx-item:hover{background:#f4f4f4}
       `}</style>
 
       {/* Urgency ping banners — one per overdue query, dismissible, stack top-right */}
@@ -668,6 +706,23 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           </div>
         ))}
       </div>
+
+      {/* Right-click "Mark/Unmark as urgent" menu — incoming cards + active-chats sidebar rows */}
+      {ctxMenu && peopleView[ctxMenu.id] && (
+        <>
+          <div onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+          <div style={{ position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, zIndex: 999, background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(16,24,40,.18)', border: '1px solid #e7e9ec', padding: 6, minWidth: 180 }}>
+            <div
+              className="cpf-ctx-item"
+              onClick={() => toggleUrgent(ctxMenu.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#1c1c1c' }}
+            >
+              <span style={{ fontWeight: 800, color: '#ca2424' }}>!</span>
+              {peopleView[ctxMenu.id].urgency === 'urgent' ? 'Unmark urgent' : 'Mark as urgent'}
+            </div>
+          </div>
+        </>
+      )}
 
       <NavRail
         collapsed={navCollapsed}
@@ -722,7 +777,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
           {queries.length > 0 ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 22 }}>
               {queries.map((p) => (
-                <div key={p.id} className={`cpf-card-hover${overdueIds.has(p.id) ? ' cpf-card-shake' : ''}`} onClick={() => accept(p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div key={p.id} className={`cpf-card-hover${overdueIds.has(p.id) ? ' cpf-card-shake' : ''}`} onClick={() => accept(p.id)} onContextMenu={(e) => openCtxMenu(e, p.id)} style={{ background: '#fff', borderRadius: 16, border: '1px solid #ebedf0', boxShadow: '0 1px 2px rgba(16,24,40,.04)', cursor: 'pointer', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                   <div style={{ height: 6, background: sentColor(p.sentiment) }} />
                   <div style={{ padding: '16px 18px 14px', display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -805,7 +860,7 @@ export default function CpfDashboard({ simulateReplies = true, replyDelaySec = 1
             </div>
             <div className="cpf-scroll" style={{ flex: 1, overflow: 'auto' }}>
               {(chatView === 'inactive' ? idleChats : liveChats).map((row) => (
-                <div key={row.id} onClick={() => open(row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : (row.idle ? 'rgba(201,138,30,0.05)' : 'rgba(12,134,132,0.03)'), boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
+                <div key={row.id} onClick={() => open(row.id)} onContextMenu={(e) => openCtxMenu(e, row.id)} style={{ position: 'relative', cursor: 'pointer', borderBottom: '1px solid #e3e5e5', padding: '14px 18px 14px 24px', transition: 'background .15s', background: row.isOpen ? '#ffffff' : (row.idle ? 'rgba(201,138,30,0.05)' : 'rgba(12,134,132,0.03)'), boxShadow: row.isOpen ? 'inset 0 0 0 2px #24a09f' : 'none' }}>
                   <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, background: sentColor(row.sentiment), opacity: row.idle ? .45 : 1 }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: row.idle ? '#555' : '#1c1c1c' }}>{row.name}</span>
