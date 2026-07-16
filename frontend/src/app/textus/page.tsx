@@ -145,6 +145,9 @@ export default function TextUsDemoPage() {
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recStartRef = useRef(0);
+  const [levels, setLevels] = useState<number[]>([]);   // live mic waveform bars (0..1)
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number>(0);
 
   const live = sessionId !== null;
   const tampered = !live && input.trim() !== PREFILL.trim();
@@ -177,6 +180,9 @@ export default function TextUsDemoPage() {
     return () => { stopped = true; clearInterval(id); };
   }, [sessionId]);
 
+  // Tear down any live mic analyser if the page unmounts mid-recording.
+  useEffect(() => () => { cancelAnimationFrame(rafRef.current); audioCtxRef.current?.close().catch(() => {}); }, []);
+
   async function onSend() {
     // ── Live mode: real web channel wired to the officer dashboard ──
     if (live) {
@@ -197,7 +203,7 @@ export default function TextUsDemoPage() {
       return;
     }
 
-    // ── Standalone demo mode: the original pre-filled-message simulation ──
+    // ── First send on a bare /textus: the pre-filled opener starts a REAL live chat ──
     if (tampered) {
       setError(
         "⚠️ Message not sent. Please don't edit or delete the pre-filled message — send it exactly as it is to start your chat. Tap \"Restore\" below, or start a new chat from the official CPF Text Us link.",
@@ -205,15 +211,30 @@ export default function TextUsDemoPage() {
       return;
     }
     setError(null);
-    setMessages((m) => [
-      ...m,
-      { from: "user", text: input },
-      {
-        from: "system",
-        text: "✅ Thanks! You're now connected to CPF Board. A Customer Correspondence Officer will be with you shortly — please type your question.",
-      },
-    ]);
+    setMessages((m) => [...m, { from: "user", text: input }]);
     setInput("");
+    await beginLiveChat();
+  }
+
+  // Open a real officer session from the bare /textus page (no ?s= handoff). Generates a
+  // session id, escalates to a CCU officer, and flips the page into live mode so text +
+  // voice + officer replies all work. The "connected" confirmation arrives via poll.
+  async function beginLiveChat() {
+    const s = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    cursorRef.current = 0;
+    try {
+      await fetch(`${API_BASE}/webchat/${s}/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationHistory: [{ role: "user", content: "Citizen started a chat from the CPF Board Text Us page." }], language: "en" }),
+      });
+    } catch {
+      setError("Couldn't reach CPF Board — please try again.");
+      return;
+    }
+    setSessionId(s); // flips to live mode + starts the poll loop
   }
 
   function restore() {
@@ -249,12 +270,38 @@ export default function TextUsDemoPage() {
     } catch {
       setError("Microphone access was blocked. Please allow the mic and try again."); return;
     }
+    // Live waveform: tap the mic stream with a Web Audio analyser and animate bars.
+    try {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AC();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      src.connect(analyser);
+      audioCtxRef.current = ctx;
+      const bins = new Uint8Array(analyser.frequencyBinCount);
+      const NBARS = 22;
+      const tick = () => {
+        analyser.getByteFrequencyData(bins);
+        const bars: number[] = [];
+        const step = Math.max(1, Math.floor(bins.length / NBARS));
+        for (let i = 0; i < NBARS; i++) bars.push((bins[i * step] ?? 0) / 255);
+        setLevels(bars);
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } catch { /* visualiser is best-effort; recording still works without it */ }
+
     const mime = pickMime();
     const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
     chunksRef.current = [];
     mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
     mr.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
+      cancelAnimationFrame(rafRef.current);
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      setLevels([]);
       const durationSec = (Date.now() - recStartRef.current) / 1000;
       const blob = new Blob(chunksRef.current, { type: mr.mimeType || mime || "audio/webm" });
       if (blob.size < 500 || durationSec < 0.5) {
@@ -432,9 +479,14 @@ export default function TextUsDemoPage() {
               <SmileIcon />
             </button>
             {recording ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, height: 44, padding: "0 16px", borderRadius: 20, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, height: 44, padding: "0 14px", borderRadius: 20, background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#e0392b", animation: "wa-rec 1s ease-in-out infinite", flexShrink: 0 }} />
-                <span style={{ fontSize: 14, color: WA_SUBTEXT }}>Recording… tap ▸ to send</span>
+                <div aria-label="Recording your voice" style={{ flex: 1, display: "flex", alignItems: "center", gap: 2, height: 26, overflow: "hidden" }}>
+                  {(levels.length ? levels : new Array(22).fill(0)).map((v, i) => (
+                    <span key={i} style={{ flex: 1, minWidth: 2, height: `${Math.max(10, Math.min(100, v * 130))}%`, background: WA_GREEN, borderRadius: 2, transition: "height 70ms linear" }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: 12, color: WA_SUBTEXT, flexShrink: 0 }}>tap ▸</span>
                 <style>{`@keyframes wa-rec{0%,100%{opacity:1}50%{opacity:.25}}`}</style>
               </div>
             ) : (
