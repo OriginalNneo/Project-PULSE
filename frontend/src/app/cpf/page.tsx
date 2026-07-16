@@ -321,7 +321,11 @@ function PulseWidget() {
         /\b(officer|representative|real person|live (?:agent|person|chat)|customer service)\b/.test(q) ||
         (/\b(agent|human|staff|someone|somebody|person)\b/.test(q) && /\b(speak|talk|connect|transfer|chat|refer|reach|contact|put|get|want|need)\b/.test(q));
       const privateInfo = d?.intent === "personal_data";
-      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:asked||privateInfo}]);
+      // The bot's own reply promising a handoff ("I'm getting you connected — a CPF officer
+      // will be with you shortly") must always carry the button, or the promise is a dead end.
+      const reply = String(d?.content??"").toLowerCase();
+      const offered = reply.includes("officer") && /\b(connect|redirect|transfer|shortly|with you|reply|escalat|hand(?:ing)? (?:you )?over)\b/.test(reply);
+      setMsgs(p=>[...p,{role:"agent",content:d?.content??"Sorry, I couldn't get a response.",offer:asked||privateInfo||offered}]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
     finally { setBusy(false); setTimeout(()=>logRef.current?.scrollTo({top:9999,behavior:"smooth"}),50); }
   }
