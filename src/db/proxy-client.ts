@@ -7,6 +7,7 @@
 import { MongoClient } from "mongodb";
 import { searchKnowledge, searchTerminology } from "../data/knowledge/repository.js";
 import type { GuidingQuestion } from "../data/docstore/types.js";
+import type { VulnerabilityTier } from "../shared/types/index.js";
 import { createServiceLogger } from "../shared/logger.js";
 
 const log = createServiceLogger("db");
@@ -43,6 +44,15 @@ export interface UserPrefs {
   pendingVoiceUnclear?: boolean; // last voice note was unclear → used to summarise an escalation right after
   preferred_dialect?: string;
   pendingGuiding?: PendingGuiding;
+  // ── Reading-support level (messaging channels) ──────────────────────────────
+  // Drives the reply reading level + TTS speech rate. Default self_service (full detail).
+  // Raised via explicit opt-in ("/support"/"simple") or an accepted auto-detected offer;
+  // lowered only by the citizen ("full"/"normal"). See agents/accessibility/support.ts.
+  support_tier?: VulnerabilityTier;
+  pendingSupportOffer?: boolean;   // we offered simpler replies; a "yes"/"simple" applies it
+  supportOfferDeclined?: boolean;  // citizen declined the offer → don't re-offer this session
+  lastReplyMeta?: { words: number; ts: string }; // last bot reply size/time — reading-rate proxy
+  slowReplyStreak?: number;        // consecutive turns with an implied reading rate below the floor
 }
 
 export interface SlangEntry {

@@ -192,4 +192,65 @@ describe("processInbound — normal query → deliver", () => {
     expect(synthesizeSpeech).toHaveBeenCalled();
     expect(ch.sendVoice).toHaveBeenCalledWith("AAA", "audio/mpeg");
   });
+
+  it("passes the citizen's resolved support_tier into the query agent (not hardcoded self_service)", async () => {
+    vi.mocked(getUserPrefs).mockResolvedValue({ ...DEFAULT_PREFS, support_tier: "guided" } as never);
+    await run(makeChannel(), { text: "What is CPF LIFE?" });
+    expect(runQueryAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ vulnerabilityTier: "guided" }),
+    );
+  });
+
+  it("a guided citizen hears a slower voice reply (speech rate 0.85)", async () => {
+    vi.mocked(getUserPrefs).mockResolvedValue({ ...DEFAULT_PREFS, support_tier: "guided", voice_enabled: true } as never);
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ audioBase64: "AAA", mimeType: "audio/mpeg" } as never);
+    await run(makeChannel(), { text: "What is CPF LIFE?" });
+    // synthesizeSpeech(text, lang, speechRate, dialect) — third arg is the rate.
+    expect(synthesizeSpeech).toHaveBeenCalledWith(expect.anything(), "en", 0.85, undefined);
+  });
+});
+
+describe("processInbound — reading-support identification", () => {
+  it("explicit opt-in ('simple') sets support_tier=guided and does NOT run the query agent", async () => {
+    const ch = makeChannel();
+    await run(ch, { text: "simple" });
+    expect(upsertUserPrefs).toHaveBeenCalledWith(expect.objectContaining({ support_tier: "guided" }));
+    expect(runQueryAgent).not.toHaveBeenCalled();
+    expect(ch.send).toHaveBeenCalled(); // acknowledgement
+  });
+
+  it("opt-out ('full') reverts a guided citizen to self_service", async () => {
+    vi.mocked(getUserPrefs).mockResolvedValue({ ...DEFAULT_PREFS, support_tier: "guided" } as never);
+    await run(makeChannel(), { text: "full" });
+    expect(upsertUserPrefs).toHaveBeenCalledWith(expect.objectContaining({ support_tier: "self_service" }));
+    expect(runQueryAgent).not.toHaveBeenCalled();
+  });
+
+  it("a repair signal ('i don't understand') answers the query AND arms the simpler-replies offer", async () => {
+    const ch = makeChannel();
+    await run(ch, { text: "sorry i don't understand" });
+    expect(runQueryAgent).toHaveBeenCalledTimes(1); // still answered
+    expect(upsertUserPrefs).toHaveBeenCalledWith(expect.objectContaining({ pendingSupportOffer: true }));
+  });
+
+  it("accepting a pending offer ('yes') applies guided and short-circuits", async () => {
+    vi.mocked(getUserPrefs).mockResolvedValue({ ...DEFAULT_PREFS, pendingSupportOffer: true } as never);
+    await run(makeChannel(), { text: "yes" });
+    expect(upsertUserPrefs).toHaveBeenCalledWith(expect.objectContaining({ support_tier: "guided", pendingSupportOffer: false }));
+    expect(runQueryAgent).not.toHaveBeenCalled();
+  });
+
+  it("declining a pending offer ('no thanks') suppresses future offers and does not adapt", async () => {
+    vi.mocked(getUserPrefs).mockResolvedValue({ ...DEFAULT_PREFS, pendingSupportOffer: true } as never);
+    await run(makeChannel(), { text: "no thanks" });
+    expect(upsertUserPrefs).toHaveBeenCalledWith(expect.objectContaining({ pendingSupportOffer: false, supportOfferDeclined: true }));
+    expect(runQueryAgent).not.toHaveBeenCalled();
+  });
+
+  it("does not re-offer once the citizen has already declined", async () => {
+    vi.mocked(getUserPrefs).mockResolvedValue({ ...DEFAULT_PREFS, supportOfferDeclined: true } as never);
+    await run(makeChannel(), { text: "i don't understand" });
+    expect(upsertUserPrefs).not.toHaveBeenCalledWith(expect.objectContaining({ pendingSupportOffer: true }));
+  });
 });

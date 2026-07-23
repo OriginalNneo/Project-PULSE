@@ -1,5 +1,17 @@
-import type { Language } from "../shared/types/index.js";
+import type { Language, VulnerabilityTier } from "../shared/types/index.js";
 import { runTranscriberSubagent } from "../agents/transcriber/agent.js";
+import { getSpeechRate } from "../agents/accessibility/agent.js";
+import {
+  detectRepairSignal,
+  impliedReadingWpm,
+  isSupportOptIn,
+  isSupportOptOut,
+  isSupportConfirmation,
+  isSupportDecline,
+  raiseTier,
+  READING_RATE_FLOOR_WPM,
+  SLOW_STREAK_TO_OFFER,
+} from "../agents/accessibility/support.js";
 import { runQueryAgent } from "../agents/query/agent.js";
 import { getUserPrefs, upsertUserPrefs, postToQueue, getQueue, updateQueueEmotion, updateQueueLang, updateQueuePriority, appendToQueueHistory, setQueueQuerySummary, type UserPrefs } from "../db/proxy-client.js";
 import { callHermes } from "../services/ai/llmClient.js";
@@ -191,7 +203,7 @@ async function sendUnclearVoiceReply(
   channel: InboundChannel,
   userId: string,
   lang: string,
-  prefs: { speech_rate?: number; preferred_dialect?: string },
+  prefs: { support_tier?: VulnerabilityTier; preferred_dialect?: string },
 ): Promise<void> {
   // Remember the last voice note was unclear so an escalation right after has context.
   await upsertUserPrefs({ userId, pendingVoiceUnclear: true }).catch(() => null);
@@ -206,9 +218,25 @@ async function sendUnclearVoiceReply(
     await channel.send(msg).catch(() => null);
   }
   if (channel.sendVoice) {
-    const tts = await synthesizeSpeech(stripMarkdownForTTS(msg), lang as Lang, prefs.speech_rate ?? 1.0, prefs.preferred_dialect).catch(() => null);
+    // Speech rate follows the reading-support tier, same as normal replies — a high_touch
+    // citizen hears the voice-fail message slowly too, not at full speed.
+    const speechRate = getSpeechRate(prefs.support_tier ?? "self_service");
+    const tts = await synthesizeSpeech(stripMarkdownForTTS(msg), lang as Lang, speechRate, prefs.preferred_dialect).catch(() => null);
     if (tts?.audioBase64) await channel.sendVoice(tts.audioBase64, tts.mimeType).catch(() => null);
   }
+}
+
+// Acknowledge a reading-support change, localised to the citizen's language. "on" confirms
+// simpler/shorter replies (and how to revert); "off" confirms the return to full detail.
+async function sendSupportAck(channel: InboundChannel, mode: "on" | "off", lang: Lang): Promise<void> {
+  let msg = mode === "on"
+    ? "👍 I'll keep my replies short and simple from now on. Reply *full* anytime to get the complete detail."
+    : "👍 Back to full replies with complete detail. Reply *simple* anytime for shorter, simpler answers.";
+  if (lang !== "en") {
+    const t = await translateText(msg, "en", lang).catch(() => null);
+    if (t) msg = t.translated_text;
+  }
+  await channel.send(msg).catch(() => null);
 }
 
 // Strip any residual hotline numbers or stale "reply *Officer*" text the LLM may emit.
@@ -348,6 +376,10 @@ const HELP_MESSAGE = `<b>PULSE Commands</b>
 /dialect hakka — Hakka (uses Cantonese voice)
 /dialect hainanese — Hainanese (uses Cantonese voice)
 /dialect off — reset to standard language voice
+
+<b>Simpler replies</b>
+Reply *simple* (or /support) for shorter, easier-to-read answers, spoken more slowly
+Reply *full* to switch back to complete detail
 
 <b>End chat</b>
 /end — finish this chat and rate your experience (1–5 ⭐)
@@ -681,6 +713,38 @@ async function runStateIntercepts(
     return { handled: true, prefs };
   }
 
+  // Reading-support opt-in/opt-out + a pending "want simpler replies?" offer. Skipped while
+  // mid-guiding, where a bare "simple"/"full" is a legitimate answer to a guiding question;
+  // relay is handled above, so an escalated citizen's words still reach the officer.
+  if (!prefs.pendingGuiding) {
+    // Explicit opt-in — applied immediately (no offer needed), with an easy revert.
+    if (isSupportOptIn(messageText)) {
+      await upsertUserPrefs({ ...prefs, support_tier: "guided", pendingSupportOffer: false, supportOfferDeclined: false, slowReplyStreak: 0 }).catch(() => null);
+      await sendSupportAck(channel, "on", lang);
+      return { handled: true, prefs };
+    }
+    // Explicit opt-out — back to full detail.
+    if (isSupportOptOut(messageText)) {
+      await upsertUserPrefs({ ...prefs, support_tier: "self_service", pendingSupportOffer: false }).catch(() => null);
+      await sendSupportAck(channel, "off", lang);
+      return { handled: true, prefs };
+    }
+    // Reply to a pending offer: "yes"/"simple" accepts; "no" declines (and suppresses
+    // re-offering); anything else just clears the offer and is answered as a new query.
+    if (prefs.pendingSupportOffer) {
+      if (isSupportConfirmation(messageText)) {
+        await upsertUserPrefs({ ...prefs, support_tier: raiseTier((prefs.support_tier as VulnerabilityTier) ?? "self_service", "guided"), pendingSupportOffer: false, supportOfferDeclined: false, slowReplyStreak: 0 }).catch(() => null);
+        await sendSupportAck(channel, "on", lang);
+        return { handled: true, prefs };
+      }
+      const declined = isSupportDecline(messageText);
+      await upsertUserPrefs({ ...prefs, pendingSupportOffer: false, supportOfferDeclined: declined || prefs.supportOfferDeclined }).catch(() => null);
+      prefs = { ...prefs, pendingSupportOffer: false, supportOfferDeclined: declined || prefs.supportOfferDeclined };
+      if (declined) return { handled: true, prefs }; // explicit "no" — acknowledge by simply not switching
+      // otherwise fall through and answer the message normally
+    }
+  }
+
   // Guiding-questions answer intercept — escapes: explicit officer request escalates;
   // an explicit cancel exits; everything else is recorded as the current answer.
   if (prefs.pendingGuiding) {
@@ -793,7 +857,10 @@ async function deliverAnswer(ctx: {
       ? stripMarkdownForTTS(llmTtsText)
       : stripMarkdownForTTS(formatReply(cleanReply, "plain"));
     const dialectCode = prefs.preferred_dialect;
-    const tts = await synthesizeSpeech(speakText, lang, prefs.speech_rate ?? 1.0, dialectCode).catch((err: unknown) => {
+    // Speech rate follows the reading-support tier (self_service 1.0, guided 0.85,
+    // high_touch 0.7) so a citizen who asked for simpler replies also hears them slower.
+    const speechRate = getSpeechRate((prefs.support_tier as VulnerabilityTier) ?? "self_service");
+    const tts = await synthesizeSpeech(speakText, lang, speechRate, dialectCode).catch((err: unknown) => {
       log.error(err, "TTS synthesis failed — text reply already sent");
       return null;
     });
@@ -805,6 +872,34 @@ async function deliverAnswer(ctx: {
     } else {
       log.warn({ userId, lang }, "TTS returned no audio — user received text reply only");
     }
+  }
+
+  // ── Reading-support: record this reply for the reading-rate proxy, and offer simpler
+  // replies if the citizen signalled they need them. The offer is opt-in (they reply
+  // "simple"/"yes") and only fires when: not already adapted, not previously declined,
+  // and we're NOT also escalating (an officer handoff shouldn't be muddled with an offer).
+  const replyWords = plainBotReply.trim().split(/\s+/).filter(Boolean).length;
+  const alreadyAdapted = ((prefs.support_tier as VulnerabilityTier) ?? "self_service") !== "self_service";
+  const repair = detectRepairSignal(messageText);
+  const slowStreak = (prefs.slowReplyStreak ?? 0) >= SLOW_STREAK_TO_OFFER;
+  const shouldOffer =
+    !escalation.shouldEscalate && !alreadyAdapted && !prefs.supportOfferDeclined &&
+    !prefs.pendingSupportOffer && (repair || slowStreak);
+
+  await upsertUserPrefs({
+    userId,
+    lastReplyMeta: { words: replyWords, ts: new Date().toISOString() },
+    ...(shouldOffer ? { pendingSupportOffer: true, slowReplyStreak: 0 } : {}),
+  }).catch(() => null);
+
+  if (shouldOffer) {
+    let offer = "Would you like me to keep replies shorter and simpler? Reply *simple* and I will — or *no* to keep the full detail.";
+    if (lang !== "en") {
+      const t = await translateText(offer, "en", lang).catch(() => null);
+      if (t) offer = t.translated_text;
+    }
+    await channel.send(offer).catch(() => null);
+    log.info({ userId, trigger: repair ? "repair-signal" : "slow-reading" }, "Offered simpler replies");
   }
 }
 
@@ -875,6 +970,22 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
   const intercept = await runStateIntercepts(channel, userId, prefs, lang, messageText);
   prefs = intercept.prefs;
   if (intercept.handled) return;
+
+  // ── Reading-rate proxy ───────────────────────────────────────────────────────
+  // How long did the citizen take after our last reply before sending this one? A
+  // sustained low implied rate (words shown ÷ seconds) is a soft signal they may benefit
+  // from simpler, slower replies — used only to OFFER later (never to force), and only
+  // once already-answered messages establish a streak. Skipped once at high_touch (max).
+  if (prefs.lastReplyMeta && prefs.support_tier !== "high_touch") {
+    const secs = (Date.now() - new Date(prefs.lastReplyMeta.ts).getTime()) / 1000;
+    const wpm = impliedReadingWpm(prefs.lastReplyMeta.words, secs);
+    let streak = prefs.slowReplyStreak ?? 0;
+    if (wpm !== null) streak = wpm <= READING_RATE_FLOOR_WPM ? streak + 1 : 0;
+    if (streak !== (prefs.slowReplyStreak ?? 0)) {
+      prefs = { ...prefs, slowReplyStreak: streak };
+      await upsertUserPrefs({ userId, slowReplyStreak: streak }).catch(() => null);
+    }
+  }
 
   // ── Emotion detection kicked off early — runs parallel with LLM pipeline ────
   // Emotion only needs the raw message text; starting it here means it runs
@@ -1014,10 +1125,15 @@ export async function processInbound(channel: InboundChannel, msg: InboundMessag
       priorScores,
     );
 
+    // Reading-support tier drives the reply's reading level (shorter/simpler for
+    // guided/high_touch). Sourced from the citizen's persisted pref — set via explicit
+    // opt-in or an accepted offer — instead of the old hardcoded "self_service", which
+    // meant no messaging-channel citizen ever received the accessibility adaptation.
+    const supportTier = (prefs.support_tier as VulnerabilityTier) ?? "self_service";
     queryResult = await runQueryAgent(
       [{ role: "user", content: queryText, timestamp: new Date().toISOString() }],
       {
-        userId, tenantId: "cpf", vulnerabilityTier: "self_service", language: lang, triage,
+        userId, tenantId: "cpf", vulnerabilityTier: supportTier, language: lang, triage,
         emotion: { score: eff.emotion_score, label: eff.emotion_label, sustained: eff.sustained },
       },
     );

@@ -64,10 +64,37 @@ export function replyLanguageLooksWrong(text: string, language: Language): boole
   return nonLatin > 2 && nonLatin > latin;
 }
 
-function buildSystemPrompt(triage?: TriageResult, emotion?: { score: number; label: string; sustained?: boolean }): string {
+// Reading-level adaptation for citizens who told us (or showed us) they need simpler
+// communication. Deliberately tighter than BASE_SYSTEM_PROMPT on the axes it does NOT
+// already constrain — total length, chunking, and vocabulary — because the base prompt
+// already caps sentence length (~25 words) and overall length (~120 words); mapping the
+// tier's per-sentence word caps here would be a no-op. self_service returns null (the base
+// prompt is the standard experience). This shortens/simplifies at GENERATION time rather
+// than truncating a finished answer, so no CPF caveat is ever cut mid-sentence.
+export function readingLevelDirective(tier: VulnerabilityTier): string | null {
+  switch (tier) {
+    case "guided":
+      return "This citizen has asked for simpler communication. Keep the WHOLE reply under about 60 words — one lead sentence plus at most two short bullets. Use only everyday words; avoid financial jargon, and if a CPF term is unavoidable, define it in one plain phrase. Do not add extra detail, background, or caveats.";
+    case "high_touch":
+      return "This citizen needs very simple, gentle communication. Give ONE idea only, in about 40 words or fewer, as plain short sentences with no bullets. Use the simplest everyday words and define any CPF term in plain words. Finish by warmly inviting them to ask for more (e.g. \"Ask me if you'd like more.\").";
+    default:
+      return null;
+  }
+}
+
+function buildSystemPrompt(
+  triage?: TriageResult,
+  emotion?: { score: number; label: string; sustained?: boolean },
+  tier: VulnerabilityTier = "self_service",
+): string {
   let prompt = BASE_SYSTEM_PROMPT;
   if (triage?.promptHint) {
     prompt += `\n\nAdditional guidance for this query: ${triage.promptHint}`;
+  }
+  // Reading-level adaptation takes priority over the base formatting rules for length.
+  const reading = readingLevelDirective(tier);
+  if (reading) {
+    prompt += `\n\nREADING LEVEL FOR THIS REPLY (overrides the length limits above): ${reading}`;
   }
   // Emotion-driven tone: soften wording for upset callers (empathy-first, never
   // shortening the answer). The score/label are already trajectory-folded upstream
@@ -168,8 +195,11 @@ export async function runQueryAgent(
   // reply would be served from a neutral cache entry, defeating tone adaptation.
   // `sustained` is keyed too because it changes the directive wording (the
   // ongoing-difficulty acknowledgement), so it must not share a cache slot.
+  // The vulnerability tier is part of the key — a self_service (full-length) reply must
+  // never be served from cache to a guided/high_touch user, which would silently defeat
+  // the reading-level adaptation for exactly the citizens it exists to help.
   const cacheHash = createHash("sha256")
-    .update(`${intent}|${query.toLowerCase().trim()}|${language}|${ctx.triage?.category ?? 1}|${ctx.emotion?.label ?? "neutral"}|${ctx.emotion?.sustained ? "s" : ""}|${historyStr}`)
+    .update(`${intent}|${query.toLowerCase().trim()}|${language}|${ctx.triage?.category ?? 1}|${ctx.emotion?.label ?? "neutral"}|${ctx.emotion?.sustained ? "s" : ""}|${ctx.vulnerabilityTier}|${historyStr}`)
     .digest("hex");
 
   // Ignore (and later overwrite) cache entries whose script contradicts the target
@@ -208,7 +238,7 @@ export async function runQueryAgent(
   // mid-reasoning. Fall back to the raw retrieved knowledge so the user still gets the
   // facts — but remember it failed so we DON'T cache a degraded answer and the officer is
   // offered (B8: the raw retrieval scaffold used to be served and cached as a real answer).
-  const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion), hermesContext, [], 1024, true, { thinking: { type: "disabled" } }).catch(() => "");
+  const rawContent = await callHermes(buildSystemPrompt(ctx.triage, ctx.emotion, ctx.vulnerabilityTier), hermesContext, [], 1024, true, { thinking: { type: "disabled" } }).catch(() => "");
   let llmContent = rawContent.trim();
 
   // Language-drift guard: if the reply's script contradicts the target language,
@@ -218,7 +248,7 @@ export async function runQueryAgent(
   if (wrongLanguage) {
     log.warn({ userId: ctx.userId, language }, "Reply came back in the wrong language — retrying once");
     const retry = (await callHermes(
-      `${buildSystemPrompt(ctx.triage, ctx.emotion)}\n\nCRITICAL: Your entire reply MUST be written in ${LANG_NAMES[language] ?? "English"}. Any other language is a failure.`,
+      `${buildSystemPrompt(ctx.triage, ctx.emotion, ctx.vulnerabilityTier)}\n\nCRITICAL: Your entire reply MUST be written in ${LANG_NAMES[language] ?? "English"}. Any other language is a failure.`,
       hermesContext, [], 1024, true, { thinking: { type: "disabled" } },
     ).catch(() => "")).trim();
     if (retry && !replyLanguageLooksWrong(retry, language)) {
