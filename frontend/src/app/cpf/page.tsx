@@ -336,7 +336,7 @@ function PulseWidget() {
   return (
     <div style={{position:"fixed",bottom:wMobile?12:24,right:wMobile?12:24,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",fontFamily:FONT}}>
       {open&&(
-        <div style={{width:wMobile?"calc(100vw - 24px)":"min(370px, calc(100vw - 32px))",height:wMobile?"calc(100dvh - 92px)":"min(520px, calc(100vh - 100px))",background:CPF.white,borderRadius:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
+        <div style={{width:wMobile?"calc(100vw - 24px)":"min(370px, calc(100vw - 32px))",height:wMobile?"calc(100dvh - 92px)":"min(520px, calc(100vh - 100px))",background:CPF.white,borderRadius:wMobile?18:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
           <div style={{background:CPF.teal,borderBottom:`4px solid ${CPF.lime}`,color:CPF.white,padding:"11px 14px",display:"flex",alignItems:"center",gap:9,flexShrink:0,whiteSpace:"nowrap"}}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{filter:"brightness(0) invert(1)",flexShrink:0}} />
             <div style={{flex:1,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis"}}>PULSE Virtual Assistant</div>
