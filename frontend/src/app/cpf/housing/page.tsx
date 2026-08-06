@@ -178,9 +178,9 @@ function PulseWidget() {
   }
 
   return (
-    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "flex-end", fontFamily: FONT }}>
+    <div className="pulse-portal-widget" style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "flex-end", fontFamily: FONT }}>
       {open && (
-        <div style={{ width: 360, height: 500, background: CPF.white, borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.22)", display: "flex", flexDirection: "column", overflow: "hidden", marginBottom: 12 }}>
+        <div className="pulse-portal-widget-panel" style={{ width: 360, height: 500, background: CPF.white, borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.22)", display: "flex", flexDirection: "column", overflow: "hidden", marginBottom: 12 }}>
           <div style={{ background: CPF.teal, borderBottom: `4px solid ${CPF.lime}`, color: CPF.white, padding: "11px 14px", display: "flex", alignItems: "center", gap: 9, flexShrink: 0, whiteSpace: "nowrap" }}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{ filter: "brightness(0) invert(1)", flexShrink: 0 }} />
             <div style={{ flex: 1, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis" }}>PULSE Virtual Assistant</div>
@@ -244,7 +244,7 @@ export default function CpfHousingPage() {
 
       {showLogin && (
         <div onClick={() => setShowLogin(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: CPF.white, borderRadius: 8, padding: "32px 36px", maxWidth: 400, width: "90%", borderTop: `6px solid ${CPF.lime}` }}>
+          <div onClick={(e) => e.stopPropagation()} className="pulse-portal-modal" style={{ background: CPF.white, borderRadius: 8, padding: "32px 36px", maxWidth: 400, width: "90%", borderTop: `6px solid ${CPF.lime}` }}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="34" style={{ filter: `sepia(1) saturate(3) hue-rotate(130deg) brightness(0.5)` }} />
             <h2 style={{ fontSize: 20, fontWeight: 700, color: CPF.teal, margin: "18px 0 8px" }}>Log in to my cpf</h2>
             <p style={{ fontSize: 13, color: CPF.mid, marginBottom: 20, lineHeight: 1.65 }}>In the real portal, you authenticate via Singpass. This is a PULSE demonstration — click below to continue as a demo user.</p>
@@ -262,7 +262,7 @@ export default function CpfHousingPage() {
 
         {/* Government masthead */}
         <div style={{ background: CPF.white, borderBottom: `1px solid ${CPF.border}` }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", padding: "7px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div className="pulse-portal-masthead" style={{ maxWidth: 1200, margin: "0 auto", padding: "7px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: CPF.mid }}>
               <svg width="18" height="18" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#5B21B6" /><text x="10" y="14" textAnchor="middle" fontSize="9" fill="#fff" fontWeight="bold">SG</text></svg>
               A Singapore Government Agency Website
@@ -272,11 +272,11 @@ export default function CpfHousingPage() {
 
         {/* Header */}
         <header style={{ background: CPF.teal, borderBottom: `7px solid ${CPF.lime}`, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 8px rgba(0,0,0,.18)" }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 18px", display: "flex", alignItems: "stretch" }}>
-            <a href="/cpf" style={{ display: "flex", alignItems: "center", padding: "10px 28px 10px 0", borderRight: `1px solid rgba(255,255,255,.15)` }}>
+          <div className="pulse-portal-headbar" style={{ maxWidth: 1200, margin: "0 auto", padding: "0 18px", display: "flex", alignItems: "stretch" }}>
+            <a href="/cpf" className="pulse-portal-logo" style={{ display: "flex", alignItems: "center", padding: "10px 28px 10px 0", borderRight: `1px solid rgba(255,255,255,.15)` }}>
               <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF Board" height="34" style={{ filter: "brightness(0) invert(1)" }} />
             </a>
-            <nav style={{ display: "flex", flex: 1 }}>
+            <nav className="pulse-portal-nav" style={{ display: "flex", flex: 1 }}>
               {([["overview", "Overview"], ["limits", "Withdrawal Limits"], ["grants", "Grants"], ["faqs", "FAQs"]] as [string, string][]).map(([id, lbl]) => (
                 <button key={id} onClick={() => go(id)} style={{ background: "none", border: "none", borderBottom: "3px solid transparent", color: "rgba(255,255,255,.9)", padding: "0 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: FONT, transition: "border-color .15s" }}
                   onMouseEnter={(e) => (e.currentTarget.style.borderBottomColor = CPF.lime)}
@@ -285,8 +285,8 @@ export default function CpfHousingPage() {
                 </button>
               ))}
             </nav>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0" }}>
-              <div style={{ display: "flex", alignItems: "center", background: "rgba(255,255,255,.12)", borderRadius: 10, overflow: "hidden" }}>
+            <div className="pulse-portal-actions" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0" }}>
+              <div className="pulse-portal-search" style={{ display: "flex", alignItems: "center", background: "rgba(255,255,255,.12)", borderRadius: 10, overflow: "hidden" }}>
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…"
                   onKeyDown={(e) => { if (e.key === "Enter" && search.trim()) demo(`Searching for: "${search.trim()}"`); }}
                   style={{ background: "transparent", border: "none", color: CPF.white, padding: "8px 12px", fontSize: 13, fontFamily: FONT, outline: "none", width: 150 }} />
@@ -314,7 +314,7 @@ export default function CpfHousingPage() {
 
         {/* Hero */}
         <section id="overview" style={{ background: "#c1d9d2" }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 18px", display: "flex", alignItems: "center", gap: 20 }}>
+          <div className="pulse-stack-mobile" style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 18px", display: "flex", alignItems: "center", gap: 20 }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(255,255,255,.55)", color: CPF.text, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <Icon size={30} path={ICONS.home} />
             </div>
@@ -335,7 +335,7 @@ export default function CpfHousingPage() {
             <p style={{ fontSize: 14.5, color: CPF.mid, lineHeight: 1.8, marginBottom: 32, maxWidth: 820 }}>
               You can use your Ordinary Account (OA) savings to help finance the purchase of an HDB flat, a private residential property, or vacant land that you're building on. Your CPF savings can go towards:
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 18 }}>
+            <div className="pulse-grid-1col" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 18 }}>
               {USES.map((u) => (
                 <div key={u.title} style={{ background: CPF.white, border: `1px solid ${CPF.border}`, borderRadius: 10, padding: "22px 20px", boxShadow: "0 1px 4px rgba(0,0,0,.05)" }}>
                   <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#e8f5e9", color: "#1a5c2a", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
@@ -357,7 +357,7 @@ export default function CpfHousingPage() {
             <p style={{ fontSize: 14.5, color: CPF.mid, lineHeight: 1.8, marginBottom: 28, maxWidth: 820 }}>
               Two limits determine how much of your CPF OA savings you and your co-owners can put towards your property.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 20, marginBottom: 28 }}>
+            <div className="pulse-grid-1col" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 20, marginBottom: 28 }}>
               <div style={{ border: `1.5px solid ${CPF.teal}`, borderRadius: 10, padding: "22px 24px" }}>
                 <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: .8, color: CPF.teal, marginBottom: 10 }}>Valuation Limit (VL)</p>
                 <p style={{ fontSize: 14, color: CPF.mid, lineHeight: 1.75 }}>The lower of your property's purchase price or its market value at the time of purchase. You can use your OA savings up to this amount.</p>
@@ -415,7 +415,7 @@ export default function CpfHousingPage() {
             <p style={{ fontSize: 14.5, color: CPF.mid, lineHeight: 1.8, marginBottom: 28, maxWidth: 820 }}>
               If you're buying a resale HDB flat, you may qualify for one or more housing grants on top of your CPF savings — these are disbursed directly into your CPF Ordinary Account.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 18 }}>
+            <div className="pulse-grid-1col" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 18 }}>
               {GRANTS.map((g) => (
                 <div key={g.name} style={{ border: `1px solid ${CPF.border}`, borderRadius: 10, padding: "20px 20px 22px", display: "flex", flexDirection: "column", gap: 8 }}>
                   <span style={{ color: "#7a4a00" }}><Icon size={22} path={ICONS.gift} /></span>
@@ -431,7 +431,7 @@ export default function CpfHousingPage() {
 
         {/* Refund */}
         <section style={{ padding: "48px 18px" }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 24 }}>
+          <div className="pulse-grid-1col" style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 24 }}>
             <div>
               <span style={{ color: CPF.teal, display: "inline-flex", marginBottom: 12 }}><Icon size={26} path={ICONS.refresh} /></span>
               <h3 style={{ fontSize: 17, fontWeight: 700, color: CPF.text, marginBottom: 10 }}>Refunding your CPF savings</h3>
@@ -489,7 +489,7 @@ export default function CpfHousingPage() {
             <div style={{ marginBottom: 24 }}>
               <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF Board" height="30" style={{ filter: "brightness(0) invert(1)", opacity: .8 }} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 24, marginBottom: 28 }}>
+            <div className="pulse-grid-1col" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 24, marginBottom: 28 }}>
               {[
                 { h: "CPF Board", links: ["About CPF Board", "Board members", "Careers", "Press releases", "Legislation"] },
                 { h: "Home Ownership", links: ["Home Purchase Planner", "CPF Housing Grants", "Home buying guide (below 55)", "Home buying guide (above 55)"] },

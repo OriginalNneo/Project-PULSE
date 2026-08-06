@@ -198,7 +198,7 @@ export default function HomePage() {
 
       {/* ── Top nav — its own band, clearly separated by a rule + shadow ── */}
       <header style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, boxShadow: "0 1px 0 rgba(11,97,96,.04)" }}>
-        <nav aria-label="Site navigation" style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 52px" }}>
+        <nav aria-label="Site navigation" className="pulse-lp-nav" style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 52px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.teal, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ color: C.bg, fontWeight: 700, fontSize: 14, fontFamily: FONT_HEADING }}>P</span>
@@ -206,7 +206,7 @@ export default function HomePage() {
             <span style={{ fontFamily: FONT_HEADING, fontWeight: 600, fontSize: 19, letterSpacing: 1, color: C.teal }}>PULSE</span>
           </div>
 
-          <ul style={{ display: "flex", gap: 4, listStyle: "none", margin: 0, padding: 0 }}>
+          <ul className="pulse-lp-navlinks" style={{ display: "flex", gap: 4, listStyle: "none", margin: 0, padding: 0 }}>
             {NAV_LINKS.map((l) => (
               <li key={l.href}>
                 <a href={l.href}
@@ -228,7 +228,7 @@ export default function HomePage() {
         <div style={{ position: "absolute", bottom: -160, left: -100, width: 420, height: 420, borderRadius: "50%", background: `radial-gradient(circle, ${PASTELS[0].bg} 0%, transparent 70%)`, opacity: 0.7, filter: "blur(10px)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", top: "30%", left: "58%", width: 300, height: 300, borderRadius: "50%", background: `radial-gradient(circle, ${PASTELS[3].bg} 0%, transparent 70%)`, opacity: 0.55, filter: "blur(10px)", pointerEvents: "none" }} />
 
-        <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "48px 24px", minHeight: "calc(100vh - 78px)", maxWidth: 1280, margin: "0 auto", boxSizing: "border-box" as const }}>
+        <div className="pulse-lp-hero" style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "48px 24px", minHeight: "calc(100vh - 78px)", maxWidth: 1280, margin: "0 auto", boxSizing: "border-box" as const }}>
 
           {/* Pill badge */}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: PASTELS[0].bg, borderRadius: 100, padding: "7px 18px", fontSize: 12, fontWeight: 700, letterSpacing: 1.3, color: PASTELS[0].fg, marginBottom: 32, textTransform: "uppercase" as const }}>
@@ -236,7 +236,7 @@ export default function HomePage() {
           </div>
 
           {/* Headline */}
-          <h1 style={{ fontFamily: FONT_HEADING, fontSize: "clamp(34px, 5.6vw, 84px)", fontWeight: 600, lineHeight: 1.1, letterSpacing: -0.6, color: C.teal, marginBottom: 24 }}>
+          <h1 className="pulse-lp-h1" style={{ fontFamily: FONT_HEADING, fontSize: "clamp(34px, 5.6vw, 84px)", fontWeight: 600, lineHeight: 1.1, letterSpacing: -0.6, color: C.teal, marginBottom: 24 }}>
             <span style={{ display: "block", whiteSpace: "nowrap" as const }}>Government correspondence,</span>
             <span style={{ display: "block", whiteSpace: "nowrap" as const }}>made human</span>
           </h1>
@@ -269,6 +269,7 @@ export default function HomePage() {
           regardless of hero content height; fades out slowly once scrolled. */}
       <div
         aria-hidden="true"
+        className="pulse-hide-mobile"
         style={{
           position: "fixed", bottom: 36, left: "50%", zIndex: 40, transform: `translateX(-50%) translateY(${scrolled ? 10 : 0}px)`,
           display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
@@ -283,7 +284,7 @@ export default function HomePage() {
       </div>
 
       {/* ── Features ── */}
-      <section aria-labelledby="features-heading" style={{ padding: "96px 52px", background: C.bgAlt }}>
+      <section aria-labelledby="features-heading" className="pulse-lp-section" style={{ padding: "96px 52px", background: C.bgAlt }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 2, color: C.tealFaint, marginBottom: 12 }}>Core capabilities</p>
           <h2 id="features-heading" style={{ fontFamily: FONT_HEADING, fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 600, color: C.teal, marginBottom: 12, letterSpacing: -0.3 }}>
@@ -313,7 +314,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Demo links ── */}
-      <section id="demos" aria-labelledby="demos-heading" style={{ padding: "96px 52px", background: C.bg }}>
+      <section id="demos" aria-labelledby="demos-heading" className="pulse-lp-section" style={{ padding: "96px 52px", background: C.bg }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 2, color: C.tealFaint, marginBottom: 12 }}>Live demos</p>
           <h2 id="demos-heading" style={{ fontFamily: FONT_HEADING, fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 600, color: C.teal, marginBottom: 12, letterSpacing: -0.3 }}>
@@ -343,7 +344,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Stats strip ── */}
-      <section style={{ background: C.bgAlt, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: "48px 52px" }}>
+      <section className="pulse-lp-strip" style={{ background: C.bgAlt, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: "48px 52px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 32, textAlign: "center" as const }}>
           {STATS.map((s) => (
             <div key={s.label}>
@@ -355,7 +356,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{ padding: "40px 52px", background: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" as const, gap: 16 }}>
+      <footer className="pulse-lp-footer" style={{ padding: "40px 52px", background: C.bg, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" as const, gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 26, height: 26, borderRadius: "50%", background: C.teal, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span style={{ color: C.bg, fontWeight: 700, fontSize: 12, fontFamily: FONT_HEADING }}>P</span>

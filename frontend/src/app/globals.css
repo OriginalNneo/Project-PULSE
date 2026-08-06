@@ -78,3 +78,150 @@ button:focus-visible {
   outline: 3px solid var(--color-primary-light);
   outline-offset: 2px;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Phone layout (≤640px)
+
+   Pages style themselves with inline `style={{}}` objects, which win over
+   class rules — so every override below needs !important. The inline styles
+   stay the desktop truth; these classes only describe what changes on a
+   phone. Class prefixes: pulse- (shared), pulse-lp- (landing), pulse-portal-
+   (the simulated cpf.gov.sg pages), pulse-tu- (Text Us demo).
+   ────────────────────────────────────────────────────────────────────────── */
+
+.pulse-show-mobile { display: none; }
+
+/* The officer dashboard is desktop-only: below ~1000px it gets an overlay that
+   asks a phone to rotate first, and otherwise sends people to a desktop. Both
+   messages are in the DOM; these rules pick one. */
+@media (max-width: 1000px) {
+  .pulse-dash-notice { display: flex !important; }
+  .pulse-dash-notice-desktop { display: flex !important; }
+}
+
+/* A portrait phone has an easy first step — turn sideways — so offer that
+   instead. Tablets in portrait are wide enough that rotating won't help. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .pulse-dash-notice-rotate { display: flex !important; }
+  .pulse-dash-notice-desktop { display: none !important; }
+}
+
+/* The portal header (logo + section tabs + search + login) needs ~880px on one
+   line, so it wraps well before phone width — tablets and small laptop windows
+   would otherwise scroll sideways. */
+@media (max-width: 900px) {
+  .pulse-portal-headbar {
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    padding: 0 14px !important;
+  }
+  .pulse-portal-logo {
+    border-right: none !important;
+    padding: 8px 0 !important;
+  }
+  .pulse-portal-actions { margin-left: auto !important; }
+  /* Section tabs drop to their own full-width row and scroll sideways */
+  .pulse-portal-nav {
+    order: 3 !important;
+    width: 100% !important;
+    flex: none !important;
+    overflow-x: auto !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  .pulse-portal-nav button {
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+    white-space: nowrap !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .pulse-hide-mobile { display: none !important; }
+  .pulse-show-mobile { display: block !important; }
+  .pulse-grid-1col   { grid-template-columns: 1fr !important; }
+  .pulse-stack-mobile {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  /* ── Landing page ── */
+  .pulse-lp-nav {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 10px !important;
+    padding: 14px 18px !important;
+  }
+  .pulse-lp-navlinks {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+  }
+  .pulse-lp-hero {
+    min-height: 0 !important;
+    padding: 56px 20px 72px !important;
+  }
+  /* The headline's two lines are nowrap spans sized for a wide viewport */
+  .pulse-lp-h1 span { white-space: normal !important; }
+  .pulse-lp-section { padding: 56px 20px !important; }
+  .pulse-lp-strip   { padding: 36px 20px !important; }
+  .pulse-lp-footer {
+    flex-direction: column !important;
+    justify-content: center !important;
+    text-align: center !important;
+    padding: 32px 20px !important;
+  }
+
+  /* ── Simulated CPF portal (/cpf, /cpf/housing) ── */
+  /* Top padding keeps the floating "back home" pill off the masthead's
+     language toggles and the CPF logo, which it would otherwise sit on. */
+  .pulse-portal-masthead {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    font-size: 12px !important;
+    padding-top: 58px !important;
+  }
+  .pulse-portal-search { display: none !important; }
+  .pulse-portal-hero { min-height: 0 !important; }
+  .pulse-portal-modal { padding: 24px 20px !important; }
+
+  /* Chatbot widget goes full-screen instead of a 360×500 corner panel */
+  .pulse-portal-widget {
+    bottom: 16px !important;
+    right: 16px !important;
+  }
+  .pulse-portal-widget-panel {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+  /* …so the launcher FAB must get out of its way while it's open */
+  .pulse-portal-widget:has(.pulse-portal-widget-panel) > button { display: none !important; }
+
+  /* ── Text Us demo: drop the phone mockup, fill the viewport ── */
+  .pulse-tu-page {
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #ece5dd !important;
+  }
+  .pulse-tu-frame {
+    width: 100% !important;
+    height: 100% !important;
+    padding: 0 !important;
+    background: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .pulse-tu-screen {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+  }
+  .pulse-tu-header  { padding-top: calc(8px + env(safe-area-inset-top)) !important; }
+  .pulse-tu-inputbar { padding-bottom: calc(10px + env(safe-area-inset-bottom)) !important; }
+}

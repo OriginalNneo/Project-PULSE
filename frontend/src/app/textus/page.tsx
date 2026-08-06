@@ -105,7 +105,7 @@ function DoubleCheckIcon({ color = WA_SUBTEXT, size = 15 }: { color?: string; si
 
 function StatusBar() {
   return (
-    <div style={{ height: 44, background: WA_HEADER_BG, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px 0 24px", flexShrink: 0 }}>
+    <div className="pulse-hide-mobile" style={{ height: 44, background: WA_HEADER_BG, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px 0 24px", flexShrink: 0 }}>
       <span style={{ color: WA_TEXT, fontSize: 15, fontWeight: 600, letterSpacing: 0.2 }}>9:41</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {/* Signal bars */}
@@ -225,7 +225,7 @@ export default function TextUsDemoPage() {
   const FRAME_H = PHONE_H + BEZEL * 2 + 6;
 
   return (
-    <div style={{
+    <div className="pulse-tu-page" style={{
       minHeight: "100vh",
       background: "linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
       display: "flex",
@@ -235,13 +235,15 @@ export default function TextUsDemoPage() {
       padding: "48px 24px",
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     }}>
-      <BackHomeButton />
-      <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, fontWeight: 500, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 32 }}>
+      {/* On a phone the chat fills the screen, so the floating pill would cover
+          the chat header — the header's own back chevron goes home instead. */}
+      <span className="pulse-hide-mobile"><BackHomeButton /></span>
+      <p className="pulse-hide-mobile" style={{ color: "rgba(255,255,255,.45)", fontSize: 13, fontWeight: 500, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 32 }}>
         CPF Text Us — Demo
       </p>
 
-      {/* Phone outer frame */}
-      <div style={{
+      {/* Phone outer frame — dropped entirely on phone-width screens */}
+      <div className="pulse-tu-frame" style={{
         position: "relative",
         width: FRAME_W,
         height: FRAME_H,
@@ -252,15 +254,15 @@ export default function TextUsDemoPage() {
       }}>
 
         {/* Volume buttons (left side) */}
-        <div style={{ position: "absolute", left: -4, top: 120, width: 4, height: 32, background: "#2a2a2a", borderRadius: "2px 0 0 2px", boxShadow: "-1px 0 2px rgba(0,0,0,.5)" }} />
-        <div style={{ position: "absolute", left: -4, top: 168, width: 4, height: 62, background: "#2a2a2a", borderRadius: "2px 0 0 2px", boxShadow: "-1px 0 2px rgba(0,0,0,.5)" }} />
-        <div style={{ position: "absolute", left: -4, top: 244, width: 4, height: 62, background: "#2a2a2a", borderRadius: "2px 0 0 2px", boxShadow: "-1px 0 2px rgba(0,0,0,.5)" }} />
+        <div className="pulse-hide-mobile" style={{ position: "absolute", left: -4, top: 120, width: 4, height: 32, background: "#2a2a2a", borderRadius: "2px 0 0 2px", boxShadow: "-1px 0 2px rgba(0,0,0,.5)" }} />
+        <div className="pulse-hide-mobile" style={{ position: "absolute", left: -4, top: 168, width: 4, height: 62, background: "#2a2a2a", borderRadius: "2px 0 0 2px", boxShadow: "-1px 0 2px rgba(0,0,0,.5)" }} />
+        <div className="pulse-hide-mobile" style={{ position: "absolute", left: -4, top: 244, width: 4, height: 62, background: "#2a2a2a", borderRadius: "2px 0 0 2px", boxShadow: "-1px 0 2px rgba(0,0,0,.5)" }} />
 
         {/* Power button (right side) */}
-        <div style={{ position: "absolute", right: -4, top: 190, width: 4, height: 80, background: "#2a2a2a", borderRadius: "0 2px 2px 0", boxShadow: "1px 0 2px rgba(0,0,0,.5)" }} />
+        <div className="pulse-hide-mobile" style={{ position: "absolute", right: -4, top: 190, width: 4, height: 80, background: "#2a2a2a", borderRadius: "0 2px 2px 0", boxShadow: "1px 0 2px rgba(0,0,0,.5)" }} />
 
         {/* Screen */}
-        <div style={{
+        <div className="pulse-tu-screen" style={{
           width: PHONE_W,
           height: PHONE_H,
           background: "#ECE5DD",
@@ -271,17 +273,16 @@ export default function TextUsDemoPage() {
           position: "relative",
         }}>
 
-          {/* Status bar */}
+          {/* Simulated iOS chrome — hidden on a real phone, which draws its own */}
           <StatusBar />
-
           {/* Dynamic island */}
-          <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", width: 120, height: 34, background: "#000", borderRadius: 20, zIndex: 10 }} />
+          <div className="pulse-hide-mobile" style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", width: 120, height: 34, background: "#000", borderRadius: 20, zIndex: 10 }} />
 
           {/* WhatsApp header */}
-          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, background: WA_HEADER_BG, color: WA_TEXT, padding: "8px 14px 8px 6px", borderBottom: "1px solid #D1D1D1", zIndex: 5 }}>
-            <button style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 2px", lineHeight: 1, display: "flex" }} aria-label="Back">
+          <div className="pulse-tu-header" style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, background: WA_HEADER_BG, color: WA_TEXT, padding: "8px 14px 8px 6px", borderBottom: "1px solid #D1D1D1", zIndex: 5 }}>
+            <a href="/" style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 2px", lineHeight: 1, display: "flex" }} aria-label="Back to PULSE home">
               <ChevronLeftIcon />
-            </button>
+            </a>
             <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#00A884", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#fff", flexShrink: 0 }}>CPF</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 16.5, color: WA_TEXT }}>CPF Board</div>
@@ -318,6 +319,11 @@ export default function TextUsDemoPage() {
             {/* Encryption notice */}
             <div style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "85%", lineHeight: 1.5 }}>
               🔒 Messages are end-to-end encrypted
+            </div>
+
+            {/* On a phone the disclaimer below the phone frame is gone, so it rides here instead */}
+            <div className="pulse-show-mobile" style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "88%", lineHeight: 1.5 }}>
+              Simulated demonstration of CPF Board Text Us. No real messages are sent. For the real service, visit cpf.gov.sg.
             </div>
 
             {!live && messages.length === 0 && (
@@ -360,7 +366,7 @@ export default function TextUsDemoPage() {
           )}
 
           {/* Input bar */}
-          <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 8, padding: "8px 10px 10px", background: WA_HEADER_BG, borderTop: "1px solid #D1D1D1" }}>
+          <div className="pulse-tu-inputbar" style={{ flexShrink: 0, display: "flex", alignItems: "flex-end", gap: 8, padding: "8px 10px 10px", background: WA_HEADER_BG, borderTop: "1px solid #D1D1D1" }}>
             <button aria-label="Emoji" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, lineHeight: 1, display: "flex", alignSelf: "center" }}>
               <SmileIcon />
             </button>
@@ -394,7 +400,7 @@ export default function TextUsDemoPage() {
           </div>
 
           {/* Home indicator */}
-          <div style={{ flexShrink: 0, height: 34, background: WA_HEADER_BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="pulse-hide-mobile" style={{ flexShrink: 0, height: 34, background: WA_HEADER_BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div style={{ width: 130, height: 5, background: "#000", borderRadius: 3, opacity: 0.18 }} />
           </div>
 
@@ -436,7 +442,7 @@ export default function TextUsDemoPage() {
       </div>
 
       {/* Demo disclaimer */}
-      <p style={{ color: "rgba(255,255,255,.3)", fontSize: 12, marginTop: 28, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
+      <p className="pulse-hide-mobile" style={{ color: "rgba(255,255,255,.3)", fontSize: 12, marginTop: 28, textAlign: "center", maxWidth: 360, lineHeight: 1.6 }}>
         This is a simulated demonstration of the CPF Board Text Us service. No real messages are sent. For the real service, visit cpf.gov.sg.
       </p>
     </div>

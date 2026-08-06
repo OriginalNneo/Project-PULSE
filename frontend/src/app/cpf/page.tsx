@@ -320,9 +320,9 @@ function PulseWidget() {
   }
 
   return (
-    <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",fontFamily:FONT}}>
+    <div className="pulse-portal-widget" style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",fontFamily:FONT}}>
       {open&&(
-        <div style={{width:360,height:500,background:CPF.white,borderRadius:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
+        <div className="pulse-portal-widget-panel" style={{width:360,height:500,background:CPF.white,borderRadius:10,boxShadow:"0 8px 40px rgba(0,0,0,.22)",display:"flex",flexDirection:"column",overflow:"hidden",marginBottom:12}}>
           <div style={{background:CPF.teal,borderBottom:`4px solid ${CPF.lime}`,color:CPF.white,padding:"11px 14px",display:"flex",alignItems:"center",gap:9,flexShrink:0,whiteSpace:"nowrap"}}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{filter:"brightness(0) invert(1)",flexShrink:0}} />
             <div style={{flex:1,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis"}}>PULSE Virtual Assistant</div>
@@ -408,7 +408,7 @@ export default function CpfPage() {
       {/* Login modal */}
       {showLogin&&(
         <div onClick={()=>setShowLogin(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:CPF.white,borderRadius:8,padding:"32px 36px",maxWidth:400,width:"90%",borderTop:`6px solid ${CPF.lime}`}}>
+          <div onClick={e=>e.stopPropagation()} className="pulse-portal-modal" style={{background:CPF.white,borderRadius:8,padding:"32px 36px",maxWidth:400,width:"90%",borderTop:`6px solid ${CPF.lime}`}}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="34" style={{filter:`sepia(1) saturate(3) hue-rotate(130deg) brightness(0.5)`}} />
             <h2 style={{fontSize:20,fontWeight:700,color:CPF.teal,margin:"18px 0 8px"}}>Log in to my cpf</h2>
             <p style={{fontSize:13,color:CPF.mid,marginBottom:20,lineHeight:1.65}}>In the real portal, you authenticate via Singpass. This is a PULSE demonstration — click below to continue as a demo user.</p>
@@ -426,7 +426,7 @@ export default function CpfPage() {
 
         {/* Government masthead */}
         <div style={{background:CPF.white,borderBottom:`1px solid ${CPF.border}`}}>
-          <div style={{maxWidth:1200,margin:"0 auto",padding:"7px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div className="pulse-portal-masthead" style={{maxWidth:1200,margin:"0 auto",padding:"7px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:CPF.mid}}>
               <svg width="18" height="18" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#5B21B6"/><text x="10" y="14" textAnchor="middle" fontSize="9" fill="#fff" fontWeight="bold">SG</text></svg>
               A Singapore Government Agency Website
@@ -443,11 +443,11 @@ export default function CpfPage() {
 
         {/* Header */}
         <header style={{background:CPF.teal,borderBottom:`7px solid ${CPF.lime}`,position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 8px rgba(0,0,0,.18)"}}>
-          <div style={{maxWidth:1200,margin:"0 auto",padding:"0 18px",display:"flex",alignItems:"stretch"}}>
-            <a href="/cpf" style={{display:"flex",alignItems:"center",padding:"10px 28px 10px 0",borderRight:`1px solid rgba(255,255,255,.15)`}}>
+          <div className="pulse-portal-headbar" style={{maxWidth:1200,margin:"0 auto",padding:"0 18px",display:"flex",alignItems:"stretch"}}>
+            <a href="/cpf" className="pulse-portal-logo" style={{display:"flex",alignItems:"center",padding:"10px 28px 10px 0",borderRight:`1px solid rgba(255,255,255,.15)`}}>
               <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF Board" height="34" style={{filter:"brightness(0) invert(1)"}} />
             </a>
-            <nav style={{display:"flex",flex:1}}>
+            <nav className="pulse-portal-nav" style={{display:"flex",flex:1}}>
               {([["who",t.who],["tools",t.tools],["infohub",t.info]] as [string,string][]).map(([id,lbl])=>(
                 <button key={id} onClick={()=>go(id)} style={{background:"none",border:"none",borderBottom:"3px solid transparent",color:"rgba(255,255,255,.9)",padding:"0 28px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:FONT,transition:"border-color .15s"}}
                   onMouseEnter={e=>(e.currentTarget.style.borderBottomColor=CPF.lime)}
@@ -456,8 +456,8 @@ export default function CpfPage() {
                 </button>
               ))}
             </nav>
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 0"}}>
-              <div style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,.12)",borderRadius:10,overflow:"hidden"}}>
+            <div className="pulse-portal-actions" style={{display:"flex",alignItems:"center",gap:8,padding:"12px 0"}}>
+              <div className="pulse-portal-search" style={{display:"flex",alignItems:"center",background:"rgba(255,255,255,.12)",borderRadius:10,overflow:"hidden"}}>
                 <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={t.search+"…"}
                   onKeyDown={e=>{if(e.key==="Enter"&&search.trim()) demo(`Searching for: "${search.trim()}"`)}}
                   style={{background:"transparent",border:"none",color:CPF.white,padding:"8px 12px",fontSize:13,fontFamily:FONT,outline:"none",width:150}} />
@@ -472,7 +472,7 @@ export default function CpfPage() {
 
         {/* Hero carousel */}
         <section style={{position:"relative",overflow:"hidden"}}>
-          <div style={{background:HERO_BG,minHeight:360,display:"flex",alignItems:"center"}}>
+          <div className="pulse-portal-hero" style={{background:HERO_BG,minHeight:360,display:"flex",alignItems:"center"}}>
             <div style={{maxWidth:1200,margin:"0 auto",padding:"48px 18px",width:"100%"}}>
               <div style={{flex:1,maxWidth:600,color:CPF.text}}>
                 <div style={{marginBottom:18}}><Icon size={44} path={SLIDES[slide].icon} /></div>
@@ -488,13 +488,13 @@ export default function CpfPage() {
               </div>
             </div>
           </div>
-          <button aria-label="Previous slide" onClick={()=>goToSlide((slide+SLIDES.length-1)%SLIDES.length)}
+          <button aria-label="Previous slide" onClick={()=>goToSlide((slide+SLIDES.length-1)%SLIDES.length)} className="pulse-hide-mobile"
             style={{appearance:"none",WebkitAppearance:"none",boxSizing:"border-box",position:"absolute",left:20,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,.16)",color:CPF.white,border:"2px solid rgba(255,255,255,.5)",borderRadius:"50%",width:48,height:48,padding:0,margin:0,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"background .15s"}}
             onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background="rgba(255,255,255,.3)";}}
             onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background="rgba(255,255,255,.16)";}}>
             <Icon size={22} path={ICONS.chevronLeft} />
           </button>
-          <button aria-label="Next slide" onClick={()=>goToSlide((slide+1)%SLIDES.length)}
+          <button aria-label="Next slide" onClick={()=>goToSlide((slide+1)%SLIDES.length)} className="pulse-hide-mobile"
             style={{appearance:"none",WebkitAppearance:"none",boxSizing:"border-box",position:"absolute",right:20,top:"50%",transform:"translateY(-50%)",background:"rgba(255,255,255,.16)",color:CPF.white,border:"2px solid rgba(255,255,255,.5)",borderRadius:"50%",width:48,height:48,padding:0,margin:0,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"background .15s"}}
             onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.background="rgba(255,255,255,.3)";}}
             onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.background="rgba(255,255,255,.16)";}}>
@@ -524,7 +524,7 @@ export default function CpfPage() {
           <div style={{maxWidth:1200,margin:"0 auto"}}>
             <h2 style={{fontSize:28,fontWeight:800,color:CPF.teal,marginBottom:8,letterSpacing:"-0.5px"}}>{t.tTitle}</h2>
             <div style={{width:56,height:5,background:CPF.lime,borderRadius:3,marginBottom:32}} />
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:20}}>
+            <div className="pulse-grid-1col" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:20}}>
               {TOPICS.map(tp=>{
                 const clickable = tp.id === "housing";
                 return (
@@ -567,7 +567,7 @@ export default function CpfPage() {
               </button>
             </div>
             <div style={{width:56,height:5,background:CPF.lime,borderRadius:3,marginBottom:28}} />
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>
+            <div className="pulse-grid-1col" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:16}}>
               {NEWS.map((n,i)=>(
                 <button key={i} onClick={()=>demo(`Article: "${n.title}"\n\n${n.desc}`)}
                   style={{background:CPF.bg,border:`1px solid ${CPF.border}`,borderRadius:8,padding:"20px",textAlign:"left",cursor:"pointer",display:"flex",flexDirection:"column",gap:10,transition:"all .15s",fontFamily:FONT}}
@@ -591,7 +591,7 @@ export default function CpfPage() {
           <div style={{maxWidth:1200,margin:"0 auto"}}>
             <h2 style={{fontSize:22,fontWeight:800,color:CPF.white,marginBottom:6}}>About CPF Board</h2>
             <div style={{width:40,height:4,background:CPF.lime,borderRadius:2,marginBottom:28}} />
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:28}}>
+            <div className="pulse-grid-1col" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:28}}>
               {[
                 {icon:ICONS.target,h:"Our Mission",b:"To act in the interests of CPF members by helping them save for retirement, healthcare and housing needs."},
                 {icon:ICONS.trending,h:"4M+ Members",b:"CPF serves over 4 million Singapore Citizens and Permanent Residents across all life stages."},
@@ -622,7 +622,7 @@ export default function CpfPage() {
             <div style={{marginBottom:24}}>
               <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF Board" height="30" style={{filter:"brightness(0) invert(1)",opacity:.8}} />
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:24,marginBottom:28}}>
+            <div className="pulse-grid-1col" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:24,marginBottom:28}}>
               {[
                 {h:"CPF Board",links:["About CPF Board","Board members","Careers","Press releases","Legislation"]},
                 {h:"Business Partners",links:["Employers","Healthcare institutions","Property agents","Financial institutions","Payroll software"]},
