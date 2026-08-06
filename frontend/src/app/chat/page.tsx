@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import BackHomeButton from "@/components/BackHomeButton";
 
 type Role = "user" | "agent";
@@ -40,6 +40,26 @@ const DIALECTS: { label: string; code: string }[] = [
   { label: "Singapore Tamil", code: "ta" },
 ];
 
+// Stashed for the Text Us page so it can confirm the member's context reached the officer.
+const HANDOFF_SUMMARY_KEY = "pulse_handoff_summary";
+
+// Most recent substantive user message, skipping bare "connect me" triggers. (Kept in sync
+// with the /cpf widget — see cpf/page.tsx.)
+function pickHandoffSummary(history: { role: string; content: string }[]): string {
+  const bare = /^\s*(connect(\s*me)?|talk|speak|chat|officer|agent|human|real person|customer service|help|yes|yeah|please|ok(ay)?)[\s.!,]*$/i;
+  const clip = (s: string) => (s.length > 140 ? s.slice(0, 137) + "…" : s);
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role !== "user") continue;
+    const t = m.content.trim();
+    if (t.length >= 6 && !bare.test(t)) return clip(t);
+  }
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "user") return clip(history[i].content.trim());
+  }
+  return "your enquiry";
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     { role: "agent", content: GREETING, timestamp: new Date().toISOString() },
@@ -55,6 +75,11 @@ export default function ChatPage() {
   const [voiceQuality, setVoiceQuality] = useState<"clear" | "unclear">("clear");
   const [voiceError, setVoiceError] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const officerOfferedRef = useRef(false);
+
+  // Dynamic scroll: keep the newest message in view as the conversation grows.
+  useEffect(() => { const el = logRef.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, isSending]);
 
   function selectLanguage(label: string, code: string) {
     setLanguage(code);
@@ -97,7 +122,16 @@ export default function ChatPage() {
       // Backend semantic signal (5-layer escalation analyzer) — works regardless of the
       // reply's language, where the regexes above only match English wording.
       const serverOffer = json?.data?.offerOfficer === true;
-      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString(), offer: serverOffer || asked || privateInfo || offered }]);
+      const offer = serverOffer || asked || privateInfo || offered;
+      // Explicit re-request after the button was already shown → connect immediately (never
+      // auto-connects without an explicit ask). Kept in sync with the /cpf widget.
+      if (asked && officerOfferedRef.current) {
+        setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString() }]);
+        void connectOfficer();
+        return;
+      }
+      if (offer) officerOfferedRef.current = true;
+      setMessages((prev) => [...prev, { role: "agent", content: reply, timestamp: new Date().toISOString(), offer }]);
     } catch (err) {
       setError("Sorry, I couldn't reach PULSE. Please check your connection and try again.");
     } finally {
@@ -136,6 +170,7 @@ export default function ChatPage() {
     if (isConnecting) return;
     setIsConnecting(true);
     setVoiceError(false);
+    try { window.sessionStorage.setItem(HANDOFF_SUMMARY_KEY, pickHandoffSummary(messages)); } catch { /* storage disabled — skip the confirmation */ }
     const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -170,7 +205,7 @@ export default function ChatPage() {
       <h1>Ask PULSE</h1>
       <p>Ask a question about your government correspondence in any language or dialect.</p>
 
-      <div role="log" aria-label="Conversation" aria-live="polite" aria-atomic="false">
+      <div ref={logRef} role="log" aria-label="Conversation" aria-live="polite" aria-atomic="false">
         {messages.map((m, i) => (
           <div key={i} role="article" aria-label={m.role === "user" ? "You" : "PULSE"}>
             <p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import BackHomeButton from "@/components/BackHomeButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
@@ -153,6 +153,26 @@ type Role = "user" | "agent";
 interface Msg { role: Role; content: string; offer?: boolean; } // offer: bot suggested connecting to a human officer
 const CHAT_LANGS = [{ l: "EN", c: "en" }, { l: "中文", c: "zh" }, { l: "BM", c: "ms" }, { l: "த", c: "ta" }];
 
+// Stashed for the Text Us page so it can confirm the member's context reached the officer.
+const HANDOFF_SUMMARY_KEY = "pulse_handoff_summary";
+
+// Most recent substantive user message, skipping bare "connect me" triggers. (Kept in sync
+// with the /cpf widget — see cpf/page.tsx.)
+function pickHandoffSummary(history: { role: string; content: string }[]): string {
+  const bare = /^\s*(connect(\s*me)?|talk|speak|chat|officer|agent|human|real person|customer service|help|yes|yeah|please|ok(ay)?)[\s.!,]*$/i;
+  const clip = (s: string) => (s.length > 140 ? s.slice(0, 137) + "…" : s);
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role !== "user") continue;
+    const t = m.content.trim();
+    if (t.length >= 6 && !bare.test(t)) return clip(t);
+  }
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "user") return clip(history[i].content.trim());
+  }
+  return "your enquiry";
+}
+
 function PulseWidget() {
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([{ role: "agent", content: "Hi! I'm PULSE, CPF Board's virtual assistant. Ask me anything about using your CPF for housing, or CPF schemes, contributions, and account services." }]);
@@ -162,6 +182,10 @@ function PulseWidget() {
   const [connecting, setConnecting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const officerOfferedRef = useRef(false);
+
+  // Dynamic scroll: snap to the newest message whenever the log grows.
+  useEffect(() => { const el = logRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs, busy]);
 
   // Hand off to a human CCU officer: escalate carrying this conversation as context, then
   // open the Text Us page bound to the same web session so the chat continues live there.
@@ -169,6 +193,7 @@ function PulseWidget() {
   async function connectOfficer() {
     if (connecting) return;
     setConnecting(true);
+    try { window.sessionStorage.setItem(HANDOFF_SUMMARY_KEY, pickHandoffSummary(msgs)); } catch { /* storage disabled — skip the confirmation */ }
     const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -200,7 +225,16 @@ function PulseWidget() {
       const reply = String(d?.content ?? "").toLowerCase();
       const offered = reply.includes("officer") && /\b(connect|redirect|transfer|shortly|with you|reply|escalat|hand(?:ing)? (?:you )?over)\b/.test(reply);
       const serverOffer = d?.offerOfficer === true;
-      setMsgs((p) => [...p, { role: "agent", content: d?.content ?? "Sorry, I couldn't get a response.", offer: serverOffer || asked || privateInfo || offered }]);
+      const offer = serverOffer || asked || privateInfo || offered;
+      // Explicit re-request after the button was already shown → connect immediately (never
+      // auto-connects without an explicit ask). Kept in sync with the /cpf widget.
+      if (asked && officerOfferedRef.current) {
+        setMsgs((p) => [...p, { role: "agent", content: d?.content ?? "Connecting you to an officer now…" }]);
+        void connectOfficer();
+        return;
+      }
+      if (offer) officerOfferedRef.current = true;
+      setMsgs((p) => [...p, { role: "agent", content: d?.content ?? "Sorry, I couldn't get a response.", offer }]);
     } catch { setErr("Couldn't reach PULSE — please try again."); }
     finally { setBusy(false); setTimeout(() => logRef.current?.scrollTo({ top: 9999, behavior: "smooth" }), 50); }
   }
@@ -208,7 +242,7 @@ function PulseWidget() {
   return (
     <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "flex-end", fontFamily: FONT }}>
       {open && (
-        <div style={{ width: 360, height: 500, background: CPF.white, borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.22)", display: "flex", flexDirection: "column", overflow: "hidden", marginBottom: 12 }}>
+        <div style={{ width: 360, height: 500, background: CPF.white, borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.22)", display: "flex", flexDirection: "column", overflow: "hidden", marginBottom: 12, resize: "both", minWidth: 300, minHeight: 360, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 100px)" }}>
           <div style={{ background: CPF.teal, borderBottom: `4px solid ${CPF.lime}`, color: CPF.white, padding: "11px 14px", display: "flex", alignItems: "center", gap: 9, flexShrink: 0, whiteSpace: "nowrap" }}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{ filter: "brightness(0) invert(1)", flexShrink: 0 }} />
             <div style={{ flex: 1, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis" }}>PULSE Virtual Assistant</div>
@@ -250,8 +284,8 @@ function PulseWidget() {
           </div>
         </div>
       )}
-      <button onClick={() => setOpen((o) => !o)} style={{ appearance: "none", WebkitAppearance: "none", boxSizing: "border-box", width: 56, height: 56, padding: 0, margin: 0, flexShrink: 0, borderRadius: "50%", border: `3px solid ${CPF.lime}`, background: CPF.teal, color: CPF.white, cursor: "pointer", boxShadow: "0 4px 16px rgba(10,97,96,.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Icon size={open ? 20 : 22} path={open ? ICONS.close : ICONS.chat} />
+      <button onClick={() => setOpen((o) => !o)} aria-label={open ? "Close chat" : "Open PULSE chat"} style={{ appearance: "none", WebkitAppearance: "none", boxSizing: "border-box", width: 68, height: 68, padding: 0, margin: 0, flexShrink: 0, borderRadius: "50%", border: `3px solid ${CPF.lime}`, background: CPF.teal, color: CPF.white, cursor: "pointer", boxShadow: "0 4px 16px rgba(10,97,96,.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon size={open ? 26 : 30} path={open ? ICONS.close : ICONS.chat} />
       </button>
     </div>
   );

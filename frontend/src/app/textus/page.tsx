@@ -9,9 +9,14 @@ const PREFILL =
   "[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.";
 
 interface Bubble {
-  from: "user" | "system";
+  from: "user" | "system" | "notice";
   text: string;
 }
+
+// Key under which the CPF portal / chat widgets stash a short summary of the
+// citizen's issue right before redirecting here, so we can confirm to the member
+// that their context carried over to the officer. Read + cleared once on arrival.
+const HANDOFF_SUMMARY_KEY = "pulse_handoff_summary";
 
 type PendingAction = "call" | "camera" | null;
 
@@ -103,6 +108,26 @@ function DoubleCheckIcon({ color = WA_SUBTEXT, size = 15 }: { color?: string; si
   );
 }
 
+// CPF Board profile picture — the real logo on a white disc, matching how WhatsApp
+// renders a business avatar. Falls back to nothing if the asset ever fails to load.
+function CpfAvatar({ size = 36 }: { size?: number }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.08)" }}>
+      <img src="/cpf-logo.png" alt="CPF Board" width={Math.round(size * 0.82)} height={Math.round(size * 0.82)} style={{ objectFit: "contain" }} />
+    </div>
+  );
+}
+
+// WhatsApp-style verified business badge: a white check inside a solid seal.
+function VerifiedBadge({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Verified business" style={{ display: "inline-block", verticalAlign: "-2px", flexShrink: 0 }}>
+      <path fill={WA_TEAL} d="M12 1 L14.42 3.75 L17.95 2.75 L18.5 6.37 L22.01 7.43 L20.51 10.78 L22.89 13.57 L19.82 15.57 L20.31 19.2 L16.65 19.23 L15.1 22.55 L12 20.6 L8.9 22.55 L7.35 19.23 L3.69 19.2 L4.18 15.57 L1.11 13.57 L3.49 10.78 L1.99 7.43 L5.5 6.37 L6.05 2.75 L9.58 3.75 Z" />
+      <path d="M8 12l2.7 2.7L16 9.4" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
+
 function StatusBar() {
   return (
     <div style={{ height: 44, background: WA_HEADER_BG, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px 0 24px", flexShrink: 0 }}>
@@ -148,6 +173,7 @@ export default function TextUsDemoPage() {
   const [levels, setLevels] = useState<number[]>([]);   // live mic waveform bars (0..1)
   const audioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
+  const logRef = useRef<HTMLDivElement>(null);
 
   const live = sessionId !== null;
   const tampered = !live && input.trim() !== PREFILL.trim();
@@ -158,8 +184,32 @@ export default function TextUsDemoPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const s = new URLSearchParams(window.location.search).get("s");
-    if (s) { setSessionId(s); setInput(""); }
+    if (s) {
+      setSessionId(s);
+      setInput("");
+      // Confirm to the member that the summary they built on the website reached the
+      // officer — the widget stashed it just before redirecting here.
+      let summary: string | null = null;
+      try {
+        summary = window.sessionStorage.getItem(HANDOFF_SUMMARY_KEY);
+        window.sessionStorage.removeItem(HANDOFF_SUMMARY_KEY);
+      } catch { /* private mode / storage disabled — just skip the confirmation */ }
+      if (summary && summary.trim()) {
+        setMessages([{
+          from: "notice",
+          text: `✅ Shared with the officer: “${summary.trim()}”. An officer will reply here shortly.`,
+        }]);
+      }
+    }
   }, []);
+
+  // Dynamic scroll: keep the newest message in view whenever the log changes — a
+  // member's own send, an officer's polled reply, or the handoff confirmation — so
+  // nobody has to scroll by hand (mirrors the officer dashboard's behaviour).
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   // Short-poll the backend for officer / system replies while a session is live.
   useEffect(() => {
@@ -350,6 +400,14 @@ export default function TextUsDemoPage() {
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     }}>
       <BackHomeButton />
+      {/* Slim, WhatsApp-flavoured scrollbar for the chat log (native one looks too "web"). */}
+      <style>{`
+        .wa-scroll{scrollbar-width:thin;scrollbar-color:rgba(11,20,26,.28) transparent}
+        .wa-scroll::-webkit-scrollbar{width:6px;height:6px}
+        .wa-scroll::-webkit-scrollbar-track{background:transparent}
+        .wa-scroll::-webkit-scrollbar-thumb{background:rgba(11,20,26,.28);border-radius:6px}
+        .wa-scroll::-webkit-scrollbar-thumb:hover{background:rgba(11,20,26,.42)}
+      `}</style>
       <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, fontWeight: 500, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 32 }}>
         CPF Text Us — Demo
       </p>
@@ -396,9 +454,11 @@ export default function TextUsDemoPage() {
             <button style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 2px", lineHeight: 1, display: "flex" }} aria-label="Back">
               <ChevronLeftIcon />
             </button>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#00A884", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, color: "#fff", flexShrink: 0 }}>CPF</div>
+            <CpfAvatar size={36} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 16.5, color: WA_TEXT }}>CPF Board</div>
+              <div style={{ fontWeight: 600, fontSize: 16.5, color: WA_TEXT, display: "flex", alignItems: "center", gap: 4 }}>
+                CPF Board<VerifiedBadge />
+              </div>
               <div style={{ fontSize: 12.5, color: WA_SUBTEXT }}>online</div>
             </div>
             <button onClick={() => setConfirm("camera")} aria-label="Video call" style={{ background: "none", border: "none", cursor: "pointer", padding: 6, lineHeight: 1, display: "flex" }}>
@@ -411,6 +471,8 @@ export default function TextUsDemoPage() {
 
           {/* Chat wallpaper area */}
           <div
+            ref={logRef}
+            className="wa-scroll"
             role="log"
             aria-label="Conversation"
             aria-live="polite"
@@ -445,7 +507,11 @@ export default function TextUsDemoPage() {
               </div>
             )}
 
-            {messages.map((m, i) => (
+            {messages.map((m, i) => m.from === "notice" ? (
+              <div key={i} style={{ alignSelf: "center", background: "#D9FDD3", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#3a5a3f", textAlign: "center", maxWidth: "88%", lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
+                {m.text}
+              </div>
+            ) : (
               <div key={i} style={{ display: "flex", justifyContent: m.from === "user" ? "flex-end" : "flex-start" }}>
                 <div style={{
                   maxWidth: "80%", padding: "6px 9px 8px", borderRadius: m.from === "user" ? "7.5px 0 7.5px 7.5px" : "0 7.5px 7.5px 7.5px",
@@ -495,6 +561,7 @@ export default function TextUsDemoPage() {
                   aria-label="Message"
                   value={input}
                   onChange={(e) => { setInput(e.target.value); if (error) setError(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void onSend(); } }}
                   rows={2}
                   style={{
                     flex: 1, resize: "none",
@@ -554,9 +621,11 @@ export default function TextUsDemoPage() {
           {/* Active call/camera screen */}
           {active && (
             <div role="dialog" aria-modal="true" style={{ position: "absolute", inset: 0, background: "#1a1a2e", color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, zIndex: 20 }}>
-              <div style={{ width: 90, height: 90, borderRadius: "50%", background: "#00A884", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700 }}>CPF</div>
+              <CpfAvatar size={90} />
               <div>
-                <div style={{ fontSize: 22, fontWeight: 600, textAlign: "center" }}>CPF Board</div>
+                <div style={{ fontSize: 22, fontWeight: 600, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  CPF Board<VerifiedBadge size={20} />
+                </div>
                 <div style={{ fontSize: 14, opacity: 0.6, textAlign: "center", marginTop: 4 }}>{active === "call" ? "Calling…" : "Camera (demo)"}</div>
               </div>
               <button onClick={() => setActive(null)} style={{ marginTop: 16, border: "none", background: "#E0392B", color: "#fff", borderRadius: 30, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
