@@ -522,14 +522,6 @@ export default function TextUsDemoPage() {
               🔒 Messages are end-to-end encrypted
             </div>
 
-            {/* Live handoff: clear status that a real officer is now on the line */}
-            {live && (
-              <div style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "85%", lineHeight: 1.5, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#25D366", flexShrink: 0 }} />
-                You are now speaking to a CPF officer
-              </div>
-            )}
-
             {!live && messages.length === 0 && (
               <div style={{ alignSelf: "center", background: "#FFF8C5", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#7a6a2f", textAlign: "center", maxWidth: "88%", marginTop: 4, lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
                 The message below has been pre-filled by CPF Board.<br />Press Send to begin — please don't edit it.

@@ -322,13 +322,15 @@ function PulseWidget() {
           <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: 9, background: "#f4f5f6" }}>
             {msgs.map((m, i) => (
               <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start", gap: 6 }}>
-                <div style={{ maxWidth: "82%", padding: "9px 12px", borderRadius: m.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px", background: m.role === "user" ? CPF.teal : CPF.white, color: m.role === "user" ? CPF.white : CPF.text, fontSize: 13, lineHeight: 1.55, boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>{m.content}</div>
-                {m.role === "agent" && m.offer && (
-                  <button onClick={() => void connectOfficer()} disabled={connecting}
-                    style={{ maxWidth: "82%", border: "none", background: connecting ? "#e6efee" : CPF.teal, color: connecting ? CPF.teal : CPF.white, borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: connecting ? "default" : "pointer", boxShadow: "0 2px 6px rgba(10,97,96,.3)", display: "flex", alignItems: "center", gap: 7, lineHeight: 1.3 }}>
-                    <span aria-hidden="true">👤</span>{connecting ? "Connecting you to an officer…" : "Click here to talk to a real person →"}
+                <div style={{ width: "fit-content", maxWidth: "82%", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ padding: "9px 12px", borderRadius: m.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px", background: m.role === "user" ? CPF.teal : CPF.white, color: m.role === "user" ? CPF.white : CPF.text, fontSize: 13, lineHeight: 1.55, boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>{m.content}</div>
+                  {m.role === "agent" && m.offer && (
+                    <button onClick={() => void connectOfficer()} disabled={connecting}
+                      style={{ width: "100%", border: "none", background: connecting ? "#e6efee" : CPF.teal, color: connecting ? CPF.teal : CPF.white, borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: connecting ? "default" : "pointer", boxShadow: "0 2px 6px rgba(10,97,96,.3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, lineHeight: 1.3 }}>
+                      <span aria-hidden="true">👤</span>{connecting ? "Connecting you to an officer…" : "Click here to talk to a real person →"}
                   </button>
-                )}
+                  )}
+                </div>
               </div>
             ))}
             {busy && <div style={{ alignSelf: "flex-start", background: CPF.white, borderRadius: "12px 12px 12px 3px", padding: "9px 14px", fontSize: 18, letterSpacing: 3, color: "#bbb", boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>···</div>}
