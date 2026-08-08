@@ -185,7 +185,7 @@ async function summarizeIssue(history: Msg[], lang: string): Promise<string> {
     const r = await fetch(`${API_BASE}/query`, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
       body: JSON.stringify({
-        message: "In one short phrase, describe the specific issue or question I need help with, so a CPF officer can pick it up. Reply with only the phrase — no greeting, no preamble.",
+        message: "Write a short, natural first-person message (one sentence) I could send to a CPF officer to start a chat, describing the specific help I need. Begin with 'Hi,'. Reply with only the message — no quotes, no preamble.",
         conversationHistory: history, language: lang,
       }),
     });

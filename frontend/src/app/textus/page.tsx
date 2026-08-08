@@ -174,6 +174,7 @@ export default function TextUsDemoPage() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
   const logRef = useRef<HTMLDivElement>(null);
+  const seenNoticeRef = useRef(false); // first polled system msg is the "connected" confirmation → notice
 
   const live = sessionId !== null;
   const tampered = !live && input.trim() !== PREFILL.trim();
@@ -186,30 +187,19 @@ export default function TextUsDemoPage() {
     const s = new URLSearchParams(window.location.search).get("s");
     if (s) {
       setSessionId(s);
-      setInput("");
-      // The widget stashed a short summary of the citizen's issue just before redirecting.
+      // The widget stashed a first-person opener (AI summary, or the member's own words) just
+      // before redirecting. Prefill it into the composer as an editable draft — the member
+      // reviews / edits and taps send, so we never put words in their mouth via an auto-send.
+      // The single "connected" confirmation arrives via poll and renders as a WhatsApp notice.
       let summary: string | null = null;
       try {
         summary = window.sessionStorage.getItem(HANDOFF_SUMMARY_KEY);
         window.sessionStorage.removeItem(HANDOFF_SUMMARY_KEY);
-      } catch { /* private mode / storage disabled — just skip the auto-summary */ }
-      // Frame the issue for the officer, then AUTO-SEND it as the opening message (no user
-      // action needed) so the officer immediately knows why the member is here. A prominent
-      // "real human" banner makes clear this is now a person, not the bot.
-      const framed = summary && summary.trim() && summary.trim() !== "your enquiry"
-        ? `User is having a problem with: “${summary.trim()}”`
-        : "User has requested to speak with a CCU officer.";
-      setMessages([
-        { from: "notice", text: "🧑‍💼 You're now connected with a real CCU officer — not a bot. They'll reply here shortly." },
-        { from: "user", text: framed },
-      ]);
-      // Deliver the opener to the officer via the existing web channel (mirrors onSend's live
-      // branch). Fire-and-forget — the banner + summary already show locally if this fails.
-      void fetch(`${API_BASE}/webchat/${s}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: framed }),
-      }).catch(() => { /* transient — the officer still has the seeded history from /connect */ });
+      } catch { /* private mode / storage disabled — fall through to the generic draft */ }
+      const draft = summary && summary.trim() && summary.trim() !== "your enquiry"
+        ? summary.trim()
+        : "Hi, I'd like to speak with a CCU officer about my CPF account.";
+      setInput(draft);
     }
   }, []);
 
@@ -231,7 +221,16 @@ export default function TextUsDemoPage() {
         if (!r.ok) return;
         const j = await r.json();
         if (typeof j?.cursor === "number") cursorRef.current = j.cursor;
-        const incoming: Bubble[] = (j?.messages ?? []).map((m: { text: string }) => ({ from: "system" as const, text: m.text }));
+        const incoming: Bubble[] = (j?.messages ?? []).map((m: { text: string }) => {
+          // The backend queues the "connected" confirmation during /connect, so the first
+          // system message of the session is always it — render that one as a native WhatsApp
+          // system notice (muted pill, no ✅), the rest as normal officer bubbles.
+          if (!seenNoticeRef.current) {
+            seenNoticeRef.current = true;
+            return { from: "notice" as const, text: m.text.replace(/^[\s✅✓]+/, "") };
+          }
+          return { from: "system" as const, text: m.text };
+        });
         if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
       } catch { /* transient — retry next tick */ }
     }
@@ -513,12 +512,12 @@ export default function TextUsDemoPage() {
             )}
             {live && messages.length === 0 && (
               <div style={{ alignSelf: "center", background: "#FFF8C5", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#7a6a2f", textAlign: "center", maxWidth: "88%", marginTop: 4, lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
-                Connecting you to a CPF officer… you can start typing your question.
+                We've drafted a message from your chat below — review or edit it, then tap send. A CCU officer will reply here.
               </div>
             )}
 
             {messages.map((m, i) => m.from === "notice" ? (
-              <div key={i} style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#54656F", textAlign: "center", maxWidth: "88%", lineHeight: 1.5 }}>
+              <div key={i} style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "85%", lineHeight: 1.5 }}>
                 {m.text}
               </div>
             ) : (
