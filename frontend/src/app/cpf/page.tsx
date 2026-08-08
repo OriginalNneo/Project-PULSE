@@ -211,7 +211,7 @@ const SLIDES = [
 
 // ── Quick access ──────────────────────────────────────────────────────────────
 const QUICK = [
-  { icon:ICONS.person, label:"my cpf Online" },
+  { icon:ICONS.person, label:"My CPF Online" },
   { icon:ICONS.calculator, label:"Calculators" },
   { icon:ICONS.document, label:"Forms" },
   { icon:ICONS.card, label:"e-Cashier" },

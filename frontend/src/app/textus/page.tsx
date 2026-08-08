@@ -205,8 +205,8 @@ export default function TextUsDemoPage() {
 
       handoffSeededRef.current = true;
       const greeting = topic
-        ? `Hi 👋 Thanks for reaching out to CPF Board. I can see your enquiry about ${topic} came through from your chat — I'll help you with this right here. Feel free to add anything else below.`
-        : `Hi 👋 Thanks for reaching out to CPF Board. I've received your enquiry and I'll help you from here — go ahead and send your message below.`;
+        ? `Hi 👋 Thanks for reaching out to CPF Board.\n\nI can see your enquiry about ${topic} came through from your earlier chat — I'll help you with it right here.\n\nFeel free to add any other details below.`
+        : `Hi 👋 Thanks for reaching out to CPF Board.\n\nI've received your enquiry and I'll help you from here — just send your message below whenever you're ready.`;
       // Brief "officer is typing…" first, so the greeting feels composed by a person.
       setOfficerTyping(true);
       const t = setTimeout(() => {
@@ -521,6 +521,14 @@ export default function TextUsDemoPage() {
             <div style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "85%", lineHeight: 1.5 }}>
               🔒 Messages are end-to-end encrypted
             </div>
+
+            {/* Live handoff: clear status that a real officer is now on the line */}
+            {live && (
+              <div style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "85%", lineHeight: 1.5, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#25D366", flexShrink: 0 }} />
+                You are now speaking to a CPF officer
+              </div>
+            )}
 
             {!live && messages.length === 0 && (
               <div style={{ alignSelf: "center", background: "#FFF8C5", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#7a6a2f", textAlign: "center", maxWidth: "88%", marginTop: 4, lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
