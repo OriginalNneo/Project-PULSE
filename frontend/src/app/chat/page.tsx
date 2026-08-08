@@ -60,6 +60,30 @@ function pickHandoffSummary(history: { role: string; content: string }[]): strin
   return "your enquiry";
 }
 
+// Ask PULSE to condense the chat into a one-phrase issue summary for the officer (reuses the
+// existing /query endpoint), falling back to the heuristic above on failure/timeout. (Kept in
+// sync with the /cpf widget — see cpf/page.tsx.)
+async function summarizeIssue(history: { role: string; content: string }[], lang: string): Promise<string> {
+  const fallback = pickHandoffSummary(history);
+  const clip = (s: string) => (s.length > 140 ? s.slice(0, 137) + "…" : s);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(`${API_BASE}/query`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+      body: JSON.stringify({
+        message: "In one short phrase, describe the specific issue or question I need help with, so a CPF officer can pick it up. Reply with only the phrase — no greeting, no preamble.",
+        conversationHistory: history.map((m) => ({ role: m.role, content: m.content })), language: lang,
+      }),
+    });
+    clearTimeout(timer);
+    if (!r.ok) return fallback;
+    const j = await r.json();
+    const s = String(j?.data?.content ?? "").trim().replace(/^["“']+|["”']+$/g, "").trim();
+    return s && s.length <= 160 ? clip(s) : fallback;
+  } catch { return fallback; }
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     { role: "agent", content: GREETING, timestamp: new Date().toISOString() },
@@ -170,7 +194,10 @@ export default function ChatPage() {
     if (isConnecting) return;
     setIsConnecting(true);
     setVoiceError(false);
-    try { window.sessionStorage.setItem(HANDOFF_SUMMARY_KEY, pickHandoffSummary(messages)); } catch { /* storage disabled — skip the confirmation */ }
+    // Condense the chat into an issue summary while the button shows "Connecting…"
+    // (summarizeIssue never throws — heuristic fallback). Kept in sync with the /cpf widget.
+    const summary = await summarizeIssue(messages, language);
+    try { window.sessionStorage.setItem(HANDOFF_SUMMARY_KEY, summary); } catch { /* storage disabled — skip the confirmation */ }
     const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;

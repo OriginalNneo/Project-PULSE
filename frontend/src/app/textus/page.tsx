@@ -108,12 +108,12 @@ function DoubleCheckIcon({ color = WA_SUBTEXT, size = 15 }: { color?: string; si
   );
 }
 
-// CPF Board profile picture — the real logo on a white disc, matching how WhatsApp
-// renders a business avatar. Falls back to nothing if the asset ever fails to load.
+// CPF Board profile picture — the CPF seal (logo only, no wordmark) filling the disc on
+// its official teal, matching how WhatsApp renders a business avatar.
 function CpfAvatar({ size = 36 }: { size?: number }) {
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.08)" }}>
-      <img src="/cpf-logo.png" alt="CPF Board" width={Math.round(size * 0.82)} height={Math.round(size * 0.82)} style={{ objectFit: "contain" }} />
+    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.08)" }}>
+      <img src="/cpf-logo-mark.png" alt="CPF Board" width={size} height={size} style={{ display: "block", objectFit: "cover" }} />
     </div>
   );
 }
@@ -187,19 +187,29 @@ export default function TextUsDemoPage() {
     if (s) {
       setSessionId(s);
       setInput("");
-      // Confirm to the member that the summary they built on the website reached the
-      // officer — the widget stashed it just before redirecting here.
+      // The widget stashed a short summary of the citizen's issue just before redirecting.
       let summary: string | null = null;
       try {
         summary = window.sessionStorage.getItem(HANDOFF_SUMMARY_KEY);
         window.sessionStorage.removeItem(HANDOFF_SUMMARY_KEY);
-      } catch { /* private mode / storage disabled — just skip the confirmation */ }
-      if (summary && summary.trim()) {
-        setMessages([{
-          from: "notice",
-          text: `✅ Shared with the officer: “${summary.trim()}”. An officer will reply here shortly.`,
-        }]);
-      }
+      } catch { /* private mode / storage disabled — just skip the auto-summary */ }
+      // Frame the issue for the officer, then AUTO-SEND it as the opening message (no user
+      // action needed) so the officer immediately knows why the member is here. A prominent
+      // "real human" banner makes clear this is now a person, not the bot.
+      const framed = summary && summary.trim() && summary.trim() !== "your enquiry"
+        ? `User is having a problem with: “${summary.trim()}”`
+        : "User has requested to speak with a CCU officer.";
+      setMessages([
+        { from: "notice", text: "🧑‍💼 You're now connected with a real CCU officer — not a bot. They'll reply here shortly." },
+        { from: "user", text: framed },
+      ]);
+      // Deliver the opener to the officer via the existing web channel (mirrors onSend's live
+      // branch). Fire-and-forget — the banner + summary already show locally if this fails.
+      void fetch(`${API_BASE}/webchat/${s}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: framed }),
+      }).catch(() => { /* transient — the officer still has the seeded history from /connect */ });
     }
   }, []);
 
@@ -508,7 +518,7 @@ export default function TextUsDemoPage() {
             )}
 
             {messages.map((m, i) => m.from === "notice" ? (
-              <div key={i} style={{ alignSelf: "center", background: "#D9FDD3", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#3a5a3f", textAlign: "center", maxWidth: "88%", lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
+              <div key={i} style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#54656F", textAlign: "center", maxWidth: "88%", lineHeight: 1.5 }}>
                 {m.text}
               </div>
             ) : (

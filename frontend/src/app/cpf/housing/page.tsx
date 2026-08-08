@@ -173,6 +173,30 @@ function pickHandoffSummary(history: { role: string; content: string }[]): strin
   return "your enquiry";
 }
 
+// Ask PULSE to condense the chat into a one-phrase issue summary for the officer (reuses the
+// existing /query endpoint), falling back to the heuristic above on failure/timeout. (Kept in
+// sync with the /cpf widget — see cpf/page.tsx.)
+async function summarizeIssue(history: Msg[], lang: string): Promise<string> {
+  const fallback = pickHandoffSummary(history);
+  const clip = (s: string) => (s.length > 140 ? s.slice(0, 137) + "…" : s);
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(`${API_BASE}/query`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+      body: JSON.stringify({
+        message: "In one short phrase, describe the specific issue or question I need help with, so a CPF officer can pick it up. Reply with only the phrase — no greeting, no preamble.",
+        conversationHistory: history, language: lang,
+      }),
+    });
+    clearTimeout(timer);
+    if (!r.ok) return fallback;
+    const j = await r.json();
+    const s = String(j?.data?.content ?? "").trim().replace(/^["“']+|["”']+$/g, "").trim();
+    return s && s.length <= 160 ? clip(s) : fallback;
+  } catch { return fallback; }
+}
+
 function PulseWidget() {
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([{ role: "agent", content: "Hi! I'm PULSE, CPF Board's virtual assistant. Ask me anything about using your CPF for housing, or CPF schemes, contributions, and account services." }]);
@@ -181,7 +205,13 @@ function PulseWidget() {
   const [busy, setBusy] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Custom drag-to-resize (native CSS `resize` is clipped by the rounded/overflow corner and
+  // never worked). null ⇒ default 360×500; a corner drag switches to explicit px.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const officerOfferedRef = useRef(false);
 
   // Dynamic scroll: snap to the newest message whenever the log grows.
@@ -193,7 +223,10 @@ function PulseWidget() {
   async function connectOfficer() {
     if (connecting) return;
     setConnecting(true);
-    try { window.sessionStorage.setItem(HANDOFF_SUMMARY_KEY, pickHandoffSummary(msgs)); } catch { /* storage disabled — skip the confirmation */ }
+    // Condense the chat into an issue summary while the button shows "Connecting…"
+    // (summarizeIssue never throws — heuristic fallback). Kept in sync with the /cpf widget.
+    const summary = await summarizeIssue(msgs, lang);
+    try { window.sessionStorage.setItem(HANDOFF_SUMMARY_KEY, summary); } catch { /* storage disabled — skip the confirmation */ }
     const sessionId = (typeof crypto !== "undefined" && crypto.randomUUID)
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -207,6 +240,7 @@ function PulseWidget() {
   async function send() {
     const t = text.trim(); if (!t || busy) return;
     setText(""); setErr(null);
+    if (taRef.current) taRef.current.style.height = "auto"; // collapse the auto-grown box back to base
     setMsgs((p) => [...p, { role: "user", content: t }]);
     setBusy(true);
     try {
@@ -239,10 +273,37 @@ function PulseWidget() {
     finally { setBusy(false); setTimeout(() => logRef.current?.scrollTo({ top: 9999, behavior: "smooth" }), 50); }
   }
 
+  // Drag-to-resize from the top-left grip (the panel is bottom-right anchored, so it grows
+  // toward the top-left). Pointer events cover mouse + touch.
+  function onResizeStart(e: React.PointerEvent) {
+    const el = panelRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    dragRef.current = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+    e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault();
+  }
+  function onResizeMove(e: React.PointerEvent) {
+    const d = dragRef.current; if (!d) return;
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    setSize({
+      w: clamp(d.w + (d.x - e.clientX), 300, window.innerWidth - 32),
+      h: clamp(d.h + (d.y - e.clientY), 360, window.innerHeight - 100),
+    });
+  }
+  function onResizeEnd(e: React.PointerEvent) {
+    dragRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+  }
+
   return (
     <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "flex-end", fontFamily: FONT }}>
       {open && (
-        <div style={{ width: 360, height: 500, background: CPF.white, borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.22)", display: "flex", flexDirection: "column", overflow: "hidden", marginBottom: 12, resize: "both", minWidth: 300, minHeight: 360, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 100px)" }}>
+        <div ref={panelRef} style={{ position: "relative", width: size ? size.w : 360, height: size ? size.h : 500, background: CPF.white, borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.22)", display: "flex", flexDirection: "column", overflow: "hidden", marginBottom: 12 }}>
+          <div onPointerDown={onResizeStart} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} onPointerCancel={onResizeEnd} aria-label="Drag to resize chat" title="Drag to resize"
+            style={{ position: "absolute", top: 0, left: 0, width: 22, height: 22, zIndex: 6, cursor: "nwse-resize", touchAction: "none", display: "flex", alignItems: "flex-start", justifyContent: "flex-start", padding: 4 }}>
+            <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden="true" style={{ opacity: .8 }}>
+              <path d="M1 5 L5 1 M1 9 L9 1" stroke="rgba(255,255,255,.85)" strokeWidth={1.4} strokeLinecap="round" />
+            </svg>
+          </div>
           <div style={{ background: CPF.teal, borderBottom: `4px solid ${CPF.lime}`, color: CPF.white, padding: "11px 14px", display: "flex", alignItems: "center", gap: 9, flexShrink: 0, whiteSpace: "nowrap" }}>
             <img src="https://www.cpf.gov.sg/Failover-NS/image/cpf-logo.svg" alt="CPF" height="22" style={{ filter: "brightness(0) invert(1)", flexShrink: 0 }} />
             <div style={{ flex: 1, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis" }}>PULSE Virtual Assistant</div>
@@ -264,7 +325,7 @@ function PulseWidget() {
                 <div style={{ maxWidth: "82%", padding: "9px 12px", borderRadius: m.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px", background: m.role === "user" ? CPF.teal : CPF.white, color: m.role === "user" ? CPF.white : CPF.text, fontSize: 13, lineHeight: 1.55, boxShadow: "0 1px 3px rgba(0,0,0,.08)" }}>{m.content}</div>
                 {m.role === "agent" && m.offer && (
                   <button onClick={() => void connectOfficer()} disabled={connecting}
-                    style={{ maxWidth: "90%", border: "none", background: connecting ? "#e6efee" : CPF.teal, color: connecting ? CPF.teal : CPF.white, borderRadius: 8, padding: "9px 14px", fontSize: 12.5, fontWeight: 700, cursor: connecting ? "default" : "pointer", boxShadow: "0 2px 6px rgba(10,97,96,.3)", display: "flex", alignItems: "center", gap: 7, lineHeight: 1.3 }}>
+                    style={{ maxWidth: "82%", border: "none", background: connecting ? "#e6efee" : CPF.teal, color: connecting ? CPF.teal : CPF.white, borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: connecting ? "default" : "pointer", boxShadow: "0 2px 6px rgba(10,97,96,.3)", display: "flex", alignItems: "center", gap: 7, lineHeight: 1.3 }}>
                     <span aria-hidden="true">👤</span>{connecting ? "Connecting you to an officer…" : "Click here to talk to a real person →"}
                   </button>
                 )}
@@ -274,8 +335,8 @@ function PulseWidget() {
             {err && <p style={{ color: "#c00", fontSize: 12, textAlign: "center" }}>{err}</p>}
           </div>
           <div style={{ flexShrink: 0, padding: "9px 11px", borderTop: `1px solid ${CPF.border}`, display: "flex", gap: 8, background: CPF.white }}>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder="Type your question…" rows={2} disabled={busy}
-              style={{ flex: 1, resize: "none", border: `1.5px solid ${CPF.border}`, borderRadius: 6, padding: "7px 9px", fontSize: 13, fontFamily: FONT, outline: "none" }} />
+            <textarea ref={taRef} value={text} onChange={(e) => { setText(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder="Type your question…" rows={2} disabled={busy}
+              style={{ flex: 1, resize: "vertical", overflowY: "auto", maxHeight: 200, border: `1.5px solid ${CPF.border}`, borderRadius: 6, padding: "7px 9px", fontSize: 13, fontFamily: FONT, outline: "none" }} />
             <button onClick={() => void send()} disabled={busy || !text.trim()} style={{ appearance: "none", WebkitAppearance: "none", boxSizing: "border-box", width: 38, height: 38, padding: 0, margin: 0, flexShrink: 0, borderRadius: "50%", border: "none", background: busy || !text.trim() ? "#ccc" : CPF.teal, color: CPF.white, cursor: busy || !text.trim() ? "default" : "pointer", alignSelf: "flex-end", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={16} path={ICONS.send} /></button>
           </div>
           {/* Persistent disclaimer — always visible while the widget is open (scenario: policy ambiguity) */}
