@@ -72,7 +72,7 @@ async function summarizeIssue(history: { role: string; content: string }[], lang
     const r = await fetch(`${API_BASE}/query`, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
       body: JSON.stringify({
-        message: "Write a short, natural first-person message (one sentence) I could send to a CPF officer to start a chat, describing the specific help I need. Begin with 'Hi,'. Reply with only the message — no quotes, no preamble.",
+        message: "In one short noun phrase, name the specific issue or question I need help with — e.g. 'a rejected MediShield Life claim' or 'using my CPF for a housing downpayment'. Reply with only the phrase, no preamble, no quotes.",
         conversationHistory: history.map((m) => ({ role: m.role, content: m.content })), language: lang,
       }),
     });

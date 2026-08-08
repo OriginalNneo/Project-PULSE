@@ -9,7 +9,7 @@ const PREFILL =
   "[Please do not edit this message]\nWelcome to CPF Board Text Us. To begin the chat, simply press the send button.";
 
 interface Bubble {
-  from: "user" | "system" | "notice";
+  from: "user" | "system";
   text: string;
 }
 
@@ -165,6 +165,7 @@ export default function TextUsDemoPage() {
   const [confirm, setConfirm] = useState<PendingAction>(null);
   const [active, setActive] = useState<PendingAction>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [officerTyping, setOfficerTyping] = useState(false);
   const cursorRef = useRef(0);
   const [recording, setRecording] = useState(false);
   const mediaRef = useRef<MediaRecorder | null>(null);
@@ -174,7 +175,8 @@ export default function TextUsDemoPage() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
   const logRef = useRef<HTMLDivElement>(null);
-  const seenNoticeRef = useRef(false); // first polled system msg is the "connected" confirmation → notice
+  const handoffSeededRef = useRef(false); // true once we've seeded the context-aware officer greeting
+  const confirmDroppedRef = useRef(false); // handoff: drop the generic backend confirmation (our greeting replaces it)
 
   const live = sessionId !== null;
   const tampered = !live && input.trim() !== PREFILL.trim();
@@ -187,19 +189,31 @@ export default function TextUsDemoPage() {
     const s = new URLSearchParams(window.location.search).get("s");
     if (s) {
       setSessionId(s);
-      // The widget stashed a first-person opener (AI summary, or the member's own words) just
-      // before redirecting. Prefill it into the composer as an editable draft — the member
-      // reviews / edits and taps send, so we never put words in their mouth via an auto-send.
-      // The single "connected" confirmation arrives via poll and renders as a WhatsApp notice.
+      // The widget stashed a short topic phrase for the citizen's issue just before
+      // redirecting. Use it two ways: (1) prefill an editable first-person draft into the
+      // composer for the member to review + send, and (2) seed a context-aware officer
+      // greeting that names the issue — so the handoff reads like a person who received the
+      // context, not a canned system line. The generic backend confirmation is dropped in the
+      // poll (see confirmDroppedRef) so only one "connected" message shows.
       let summary: string | null = null;
       try {
         summary = window.sessionStorage.getItem(HANDOFF_SUMMARY_KEY);
         window.sessionStorage.removeItem(HANDOFF_SUMMARY_KEY);
-      } catch { /* private mode / storage disabled — fall through to the generic draft */ }
-      const draft = summary && summary.trim() && summary.trim() !== "your enquiry"
-        ? summary.trim()
-        : "Hi, I'd like to speak with a CCU officer about my CPF account.";
-      setInput(draft);
+      } catch { /* private mode / storage disabled — fall through to the generic copy */ }
+      const topic = summary && summary.trim() && summary.trim() !== "your enquiry" ? summary.trim() : null;
+      setInput(topic ? `Hi, I need help with ${topic}.` : "Hi, I'd like to speak with a CCU officer about my CPF account.");
+
+      handoffSeededRef.current = true;
+      const greeting = topic
+        ? `Hi 👋 Thanks for reaching out to CPF Board. I can see your enquiry about ${topic} came through from your chat — I'll help you with this right here. Feel free to add anything else below.`
+        : `Hi 👋 Thanks for reaching out to CPF Board. I've received your enquiry and I'll help you from here — go ahead and send your message below.`;
+      // Brief "officer is typing…" first, so the greeting feels composed by a person.
+      setOfficerTyping(true);
+      const t = setTimeout(() => {
+        setOfficerTyping(false);
+        setMessages((prev) => [...prev, { from: "system", text: greeting }]);
+      }, 1500);
+      return () => clearTimeout(t);
     }
   }, []);
 
@@ -221,16 +235,19 @@ export default function TextUsDemoPage() {
         if (!r.ok) return;
         const j = await r.json();
         if (typeof j?.cursor === "number") cursorRef.current = j.cursor;
-        const incoming: Bubble[] = (j?.messages ?? []).map((m: { text: string }) => {
-          // The backend queues the "connected" confirmation during /connect, so the first
-          // system message of the session is always it — render that one as a native WhatsApp
-          // system notice (muted pill, no ✅), the rest as normal officer bubbles.
-          if (!seenNoticeRef.current) {
-            seenNoticeRef.current = true;
-            return { from: "notice" as const, text: m.text.replace(/^[\s✅✓]+/, "") };
+        const incoming: Bubble[] = [];
+        for (const m of (j?.messages ?? []) as { text: string }[]) {
+          // In the handoff flow our seeded officer greeting already covers the connection, so
+          // drop the generic backend confirmation (always the first system message — it's
+          // queued during /connect before the member can send). Everything else is a normal
+          // officer bubble. In the bare /textus flow handoffSeededRef stays false, so the
+          // confirmation still shows.
+          if (handoffSeededRef.current && !confirmDroppedRef.current) {
+            confirmDroppedRef.current = true;
+            continue;
           }
-          return { from: "system" as const, text: m.text };
-        });
+          incoming.push({ from: "system", text: m.text });
+        }
         if (incoming.length) setMessages((prev) => [...prev, ...incoming]);
       } catch { /* transient — retry next tick */ }
     }
@@ -510,17 +527,7 @@ export default function TextUsDemoPage() {
                 The message below has been pre-filled by CPF Board.<br />Press Send to begin — please don't edit it.
               </div>
             )}
-            {live && messages.length === 0 && (
-              <div style={{ alignSelf: "center", background: "#FFF8C5", borderRadius: 8, padding: "9px 14px", fontSize: 12.5, color: "#7a6a2f", textAlign: "center", maxWidth: "88%", marginTop: 4, lineHeight: 1.5, boxShadow: "0 1px 2px rgba(0,0,0,.08)" }}>
-                We've drafted a message from your chat below — review or edit it, then tap send. A CCU officer will reply here.
-              </div>
-            )}
-
-            {messages.map((m, i) => m.from === "notice" ? (
-              <div key={i} style={{ alignSelf: "center", background: "rgba(255,255,255,.6)", borderRadius: 8, padding: "8px 14px", fontSize: 11.5, color: "#54656F", textAlign: "center", maxWidth: "85%", lineHeight: 1.5 }}>
-                {m.text}
-              </div>
-            ) : (
+            {messages.map((m, i) => (
               <div key={i} style={{ display: "flex", justifyContent: m.from === "user" ? "flex-end" : "flex-start" }}>
                 <div style={{
                   maxWidth: "80%", padding: "6px 9px 8px", borderRadius: m.from === "user" ? "7.5px 0 7.5px 7.5px" : "0 7.5px 7.5px 7.5px",
@@ -538,6 +545,17 @@ export default function TextUsDemoPage() {
                 </div>
               </div>
             ))}
+
+            {officerTyping && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <div aria-label="Officer is typing" style={{ padding: "10px 12px", borderRadius: "0 7.5px 7.5px 7.5px", background: "#fff", boxShadow: "0 1px 1px rgba(0,0,0,.1)", display: "flex", alignItems: "center", gap: 4 }}>
+                  {[0, 1, 2].map((d) => (
+                    <span key={d} style={{ width: 7, height: 7, borderRadius: "50%", background: "#9AA6AC", animation: "wa-type 1.2s ease-in-out infinite", animationDelay: `${d * 0.18}s` }} />
+                  ))}
+                </div>
+                <style>{`@keyframes wa-type{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}`}</style>
+              </div>
+            )}
           </div>
 
           {/* Error banner */}
