@@ -16,3 +16,4 @@ data/docstore/
 
 # Deploy archives
 *.tar.gz
+*.tsbuildinfo
