@@ -52,3 +52,19 @@ describe("refusalText", () => {
     expect(refusalText("en")).toMatch(/only help with CPF/i);
   });
 });
+
+describe("isOutOfScope — CPF vocabulary overrides weak retrieval", () => {
+  it("does NOT refuse a CPF question retrieval simply failed to answer", () => {
+    // "Can you explain what MediFund is?" — indexed but unreachable by search (§5.3).
+    // Refusing would tell a citizen their genuine CPF question is off-topic.
+    expect(isOutOfScope({ topScore: 2, coverage: 0.2 }, true)).toBe(false);
+  });
+
+  it("still refuses a non-CPF question with weak retrieval", () => {
+    expect(isOutOfScope({ topScore: 2, coverage: 0.2 }, false)).toBe(true);
+  });
+
+  it("defaults to the pre-existing behaviour when domain is unknown", () => {
+    expect(isOutOfScope({ topScore: 2, coverage: 0.2 })).toBe(true);
+  });
+});

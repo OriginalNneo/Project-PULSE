@@ -47,8 +47,12 @@ export const MIN_TOP_SCORE = 6;
  * (cpf-medifund) that retrieval already fails to reach, so an over-eager floor would convert a
  * retrieval bug into a refusal shown to real citizens.
  */
-export function isOutOfScope(signal: ScopeSignal | undefined): boolean {
+export function isOutOfScope(signal: ScopeSignal | undefined, mentionsCpfTerm = false): boolean {
   if (!signal) return false; // no evidence either way — let the normal path run
+  // A question that names CPF vocabulary is CPF business even when retrieval fails to answer
+  // it. Refusing here would tell a citizen their real CPF question is off-topic — see
+  // mentionsKnownCpfTerm() and evaluation §5.3 (cpf-medifund is indexed but unreachable).
+  if (mentionsCpfTerm) return false;
   return signal.coverage < MIN_COVERAGE && signal.topScore < MIN_TOP_SCORE;
 }
 

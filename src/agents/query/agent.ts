@@ -11,6 +11,7 @@ import { selectQueryPipeline } from "./router.js";
 import { toneDirective } from "../main/tone.js";
 import { stripLinks } from "../../shared/formatter.js";
 import { isOutOfScope, refusalText } from "./scopeGuard.js";
+import { mentionsKnownCpfTerm } from "../../data/knowledge/repository.js";
 import { queryRegistry, type QueryPipelineState, type QueryToolContext } from "./registry.js";
 import type { QueryIntent } from "./routes.js";
 import type { TriageResult } from "../triage/classifier.js";
@@ -193,7 +194,8 @@ export async function runQueryAgent(
   // Personal-data requests are exempt: they ARE CPF business and have their own handling
   // (BASE_SYSTEM_PROMPT rule 8 plus the officer offer), even though the account details
   // themselves are never retrievable.
-  if (!state.isPersonalDataRequest && isOutOfScope(state.relevance)) {
+  const namesCpfTerm = await mentionsKnownCpfTerm(searchQuery).catch(() => true);
+  if (!state.isPersonalDataRequest && isOutOfScope(state.relevance, namesCpfTerm)) {
     log.info(
       { userId: ctx.userId, intent, relevance: state.relevance },
       "Query refused by scope guard — outside CPF domain",

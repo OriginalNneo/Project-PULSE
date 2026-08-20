@@ -187,6 +187,37 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Knowled
  * The scope guard divides matchedTerms by this to get coverage — the share of what the
  * citizen actually asked about that the knowledge base can speak to.
  */
+/**
+ * Does the question mention CPF vocabulary we recognise?
+ *
+ * This separates "not a CPF question" from "a CPF question retrieval failed to answer" — a
+ * distinction the scope guard cannot make from relevance scores alone. Evaluation §5.3 found
+ * cpf-medifund is present in the knowledge base but unreachable by search; without this check
+ * the guard converts that retrieval bug into "I can only help with CPF matters", which tells a
+ * citizen their genuine CPF question is off-topic. Far better to fall through to the normal
+ * path, which admits it cannot find the details and offers an officer.
+ *
+ * The lexicon is derived from the knowledge base itself (document titles, topics, tags and
+ * glossary terms) so it stays correct as content is added.
+ */
+let lexiconCache: Set<string> | null = null;
+
+export async function mentionsKnownCpfTerm(query: string): Promise<boolean> {
+  if (!lexiconCache) {
+    const [docs, terms] = await Promise.all([listDocuments(), listTerminology()]);
+    const lex = new Set<string>(["cpf"]);
+    for (const d of docs) {
+      for (const t of tokenize(`${d.title} ${d.topic} ${(d.audienceTags ?? []).join(" ")}`)) lex.add(t);
+    }
+    for (const t of terms) {
+      for (const tok of tokenize(t.term)) lex.add(tok);
+    }
+    for (const alias of Object.keys(ALIASES)) lex.add(alias);
+    lexiconCache = lex;
+  }
+  return tokenize(query).some((t) => lexiconCache!.has(t));
+}
+
 export function countQueryTokens(query: string): number {
   return tokenize(query).length;
 }
