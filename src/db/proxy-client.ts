@@ -93,6 +93,10 @@ export interface CpfKnowledgeEntry {
   question: string;
   answer: string;
   source_url: string;
+  /** Raw relevance score from searchKnowledge, carried through for the scope guard. */
+  score: number;
+  /** Which of the question's tokens this document actually matched. */
+  matched_terms: string[];
 }
 
 export interface QueueEntry {
@@ -149,6 +153,8 @@ export async function getCpfKnowledge(q: string): Promise<CpfKnowledgeEntry[] | 
       question: doc.title,
       answer: [doc.summary, ...doc.keyFacts].join("\n"),
       source_url: doc.sourceUrl,
+      score: doc.score,
+      matched_terms: doc.matchedTerms,
     }));
   } catch (err) {
     log.warn({ err }, "getCpfKnowledge failed");
