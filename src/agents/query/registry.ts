@@ -50,6 +50,10 @@ export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
         ...state,
         retrievedContent: page?.content ?? "Please visit cpf.gov.sg for more information.",
         confidence: page ? 0.5 : 0.2,
+        // Nothing in the knowledge base matched at all. The generic cpf.gov.sg landing page
+        // is a placeholder, not an answer to this question — record that as zero relevance
+        // so the scope guard can refuse rather than let the LLM improvise from boilerplate.
+        relevance: { topScore: 0, coverage: 0 },
       };
     }
 
@@ -59,11 +63,20 @@ export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
       ? `\n\nKey terms:\n${terms.map((t) => `• ${t.term}: ${t.plainEnglish}`).join("\n")}`
       : "";
 
+    const bestGeneral = results[0]!;
+    const askedGeneral = countQueryTokens(ctx.query);
+
     return {
       ...state,
-      retrievedContent: `${knowledgeParts}${termGlossary}\n\nSource: ${results[0]!.source_url}`,
-      navigationUrl: results[0]!.source_url,
+      retrievedContent: `${knowledgeParts}${termGlossary}\n\nSource: ${bestGeneral.source_url}`,
+      navigationUrl: bestGeneral.source_url,
       confidence: 0.9,
+      relevance: {
+        topScore: bestGeneral.score ?? 0,
+        coverage: askedGeneral > 0
+          ? Math.min(1, (bestGeneral.matched_terms?.length ?? 0) / askedGeneral)
+          : 0,
+      },
     };
   },
 
