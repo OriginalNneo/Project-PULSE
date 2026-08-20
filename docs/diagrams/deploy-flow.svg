@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 910 530" width="910" height="530" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="910" height="530" fill="#ffffff"/>
+<text x="455.0" y="30" font-size="19" font-weight="600" text-anchor="middle" fill="#1e1e1e">PULSE — Which deploy path do I use?</text>
+<defs><marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#495057"/></marker></defs>
+<line x1="380" y1="107" x2="240" y2="150" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="530" y1="107" x2="670" y2="150" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="225" y1="207" x2="225" y2="231" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="685" y1="207" x2="685" y2="231" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="225" y1="311" x2="225" y2="336" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="685" y1="311" x2="685" y2="336" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="280" y1="392" x2="400" y2="446" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="640" y1="416" x2="520" y2="452" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<rect x="330" y="55" width="250" height="52" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="455.0" y="86.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">What did you change?</text>
+<rect x="60" y="155" width="330" height="52" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="225.0" y="186.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Backend  (src/**)</text>
+<rect x="520" y="155" width="330" height="52" rx="10" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="685.0" y="186.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Frontend  (frontend/**)</text>
+<rect x="60" y="235" width="330" height="76" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="225.0" y="260.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">1. git push origin main</text>
+<text x="225.0" y="278.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">2. gcloud compute ssh pulse-vm</text>
+<text x="225.0" y="296.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">3. git checkout origin/main -- src/...</text>
+<rect x="520" y="235" width="330" height="76" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="685.0" y="260.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">1. git push origin main</text>
+<text x="685.0" y="278.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">2. GitHub webhook fires automatically</text>
+<text x="685.0" y="296.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">3. deploy-frontend.sh builds + restarts</text>
+<rect x="60" y="340" width="330" height="52" rx="10" fill="#ffc9c9" stroke="#1e1e1e" stroke-width="2"/>
+<text x="225.0" y="362.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">4. pm2 restart pulse-backend</text>
+<text x="225.0" y="380.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">crash-loop risk — verify immediately</text>
+<rect x="520" y="340" width="330" height="76" rx="10" fill="#ffc9c9" stroke="#1e1e1e" stroke-width="2"/>
+<text x="685.0" y="365.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">DESTRUCTIVE</text>
+<text x="685.0" y="383.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">git checkout origin/main -- frontend/</text>
+<text x="685.0" y="401.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">overwrites uncommitted edits on the VM</text>
+<rect x="290" y="450" width="330" height="52" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="455.0" y="481.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Verify: /health/live + a real query</text>
+</svg>

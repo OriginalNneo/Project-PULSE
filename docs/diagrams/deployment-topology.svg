@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 490" width="980" height="490" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="980" height="490" fill="#ffffff"/>
+<text x="490.0" y="30" font-size="19" font-weight="600" text-anchor="middle" fill="#1e1e1e">PULSE — Deployment Topology (production = GCP)</text>
+<defs><marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#495057"/></marker></defs>
+<line x1="195" y1="205" x2="265" y2="118" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<text x="230.0" y="155.5" font-size="12" text-anchor="middle" fill="#495057">HTTPS</text>
+<line x1="370" y1="146" x2="370" y2="166" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<text x="370.0" y="150.0" font-size="12" text-anchor="middle" fill="#495057">/api /webchat</text>
+<line x1="590" y1="146" x2="590" y2="166" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<text x="590.0" y="150.0" font-size="12" text-anchor="middle" fill="#495057">pages</text>
+<line x1="475" y1="200" x2="765" y2="130" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="475" y1="205" x2="765" y2="198" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="475" y1="280" x2="765" y2="268" stroke="#868e96" stroke-width="2" marker-end="url(#ah)"/>
+<rect x="40" y="170" width="150" height="70" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="115.0" y="201.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Citizen</text>
+<text x="115.0" y="219.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">web / WhatsApp / Telegram</text>
+<rect x="250" y="60" width="470" height="300" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="485.0" y="215.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e"></text>
+<rect x="270" y="90" width="430" height="52" rx="10" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="485.0" y="112.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Caddy  :80 / :443  (auto-TLS)</text>
+<text x="485.0" y="130.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">pulse.nathanielbuilds.cc</text>
+<rect x="270" y="170" width="200" height="62" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="370.0" y="197.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">pulse-backend  :3000</text>
+<text x="370.0" y="215.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">pm2 id 0</text>
+<rect x="490" y="170" width="200" height="62" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="590.0" y="197.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">pulse-frontend  :3001</text>
+<text x="590.0" y="215.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">pm2 id 1</text>
+<rect x="270" y="258" width="200" height="62" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="370.0" y="285.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">pulse-stt  :3002</text>
+<text x="370.0" y="303.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">pm2 id 2</text>
+<rect x="490" y="258" width="200" height="62" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="590.0" y="285.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">/opt/project-pulse</text>
+<text x="590.0" y="303.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">Ubuntu 24.04 · Node 20</text>
+<rect x="770" y="100" width="180" height="52" rx="10" fill="#ffec99" stroke="#1e1e1e" stroke-width="2"/>
+<text x="860.0" y="122.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">MongoDB Atlas</text>
+<text x="860.0" y="140.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">knowledge + queue</text>
+<rect x="770" y="172" width="180" height="52" rx="10" fill="#ffec99" stroke="#1e1e1e" stroke-width="2"/>
+<text x="860.0" y="194.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">z.ai GLM</text>
+<text x="860.0" y="212.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">answer generation</text>
+<rect x="770" y="244" width="180" height="52" rx="10" fill="#ffec99" stroke="#1e1e1e" stroke-width="2"/>
+<text x="860.0" y="266.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Hugging Face</text>
+<text x="860.0" y="284.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">STT / emotion</text>
+<rect x="250" y="400" width="470" height="62" rx="10" fill="#e9ecef" stroke="#868e96" stroke-width="2"/>
+<text x="485.0" y="427.0" font-size="15" font-weight="600" text-anchor="middle" fill="#868e96">LEGACY VPS 203.174.82.119 — rollback only, pulse processes STOPPED</text>
+<text x="485.0" y="445.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#868e96">(still hosts ORIION via Cloudflare Tunnel — do not decommission)</text>
+</svg>

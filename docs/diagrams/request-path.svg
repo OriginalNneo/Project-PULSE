@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 380" width="880" height="380" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="880" height="380" fill="#ffffff"/>
+<text x="440.0" y="30" font-size="19" font-weight="600" text-anchor="middle" fill="#1e1e1e">PULSE — How one citizen message is answered</text>
+<defs><marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#495057"/></marker></defs>
+<line x1="205" y1="118" x2="235" y2="118" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="415" y1="110" x2="445" y2="75" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="415" y1="121" x2="445" y2="135" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="415" y1="140" x2="445" y2="200" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="625" y1="140" x2="655" y2="140" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="745" y1="174" x2="745" y2="206" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<line x1="655" y1="245" x2="205" y2="245" stroke="#495057" stroke-width="2" marker-end="url(#ah)"/>
+<text x="430.0" y="239.0" font-size="12" text-anchor="middle" fill="#495057">drained by poll</text>
+<line x1="530" y1="231" x2="530" y2="296" stroke="#c92a2a" stroke-width="2" marker-end="url(#ah)" stroke-dasharray="6,4"/>
+<rect x="40" y="90" width="160" height="62" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="120.0" y="117.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">POST /webchat/:id</text>
+<text x="120.0" y="135.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">returns {ok:true} at once</text>
+<rect x="240" y="90" width="170" height="62" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="325.0" y="117.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">processInbound</text>
+<text x="325.0" y="135.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">fire-and-forget</text>
+<rect x="450" y="45" width="170" height="52" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="535.0" y="76.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">triage + emotion</text>
+<rect x="450" y="112" width="170" height="52" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="535.0" y="143.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">retrieval (Atlas)</text>
+<rect x="450" y="179" width="170" height="52" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="535.0" y="210.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">query agent → z.ai</text>
+<rect x="660" y="112" width="170" height="62" rx="10" fill="#b2f2bb" stroke="#1e1e1e" stroke-width="2"/>
+<text x="745.0" y="139.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">formatter</text>
+<text x="745.0" y="157.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">cap 900 chars</text>
+<rect x="660" y="210" width="170" height="62" rx="10" fill="#a5d8ff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="745.0" y="237.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">per-session bus</text>
+<text x="745.0" y="255.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">in memory</text>
+<rect x="40" y="210" width="160" height="62" rx="10" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<text x="120.0" y="237.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">GET .../poll</text>
+<text x="120.0" y="255.0" font-size="12.5" font-weight="400" text-anchor="middle" fill="#1e1e1e">short-poll cursor</text>
+<rect x="240" y="300" width="590" height="52" rx="10" fill="#ffc9c9" stroke="#1e1e1e" stroke-width="2"/>
+<text x="535.0" y="331.0" font-size="15" font-weight="600" text-anchor="middle" fill="#1e1e1e">Escalation → ccu_queue + WebSocket push to officer dashboard</text>
+</svg>

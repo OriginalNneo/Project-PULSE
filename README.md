@@ -8,8 +8,34 @@ In response to the rapid acceleration of Singapore's digital transformation, vul
 
 ---
 
+## 🚀 Live Deployment
+
+**PULSE is live at [`https://pulse.nathanielbuilds.cc`](https://pulse.nathanielbuilds.cc)** — a
+working multi-channel CPF assistant with a Customer Correspondence Unit (CCU) officer dashboard.
+
+| | |
+| :--- | :--- |
+| **Live site** | https://pulse.nathanielbuilds.cc |
+| **Health check** | `/health/live` |
+| **Hosting** | Google Cloud Compute Engine (`pulse-vm`, `asia-southeast1-b`) |
+| **Channels** | Web "Text Us", Telegram, WhatsApp (Meta Cloud API) |
+| **Deployment guide** | **[DEPLOY.md](./DEPLOY.md)** |
+
+<p align="center">
+  <img src="docs/diagrams/deployment-topology.svg" alt="PULSE deployment topology" width="100%">
+</p>
+
+### How a message is answered
+
+<p align="center">
+  <img src="docs/diagrams/request-path.svg" alt="PULSE request path" width="100%">
+</p>
+
+---
+
 ## Table of Contents
 
+- [Live Deployment](#-live-deployment)
 - [Background & Motivation](#background--motivation)
 - [Core Pillars](#-core-pillars-of-pulse)
 - [Project Goals & Impact](#-project-goals--impact)
@@ -23,6 +49,9 @@ In response to the rapid acceleration of Singapore's digital transformation, vul
 - [Key Features](#-key-features)
 - [User Journeys](#-user-journeys)
 - [Technology Stack](#-technology-stack)
+- [Deployment](#-deployment)
+- [Testing](#-testing)
+- [Repository Guide](#-repository-guide)
 - [Getting Started](#-getting-started)
 - [Project Structure](#-project-structure)
 - [Contributing](#-contributing)
@@ -1003,24 +1032,37 @@ Parent receives confirmation via preferred channel
 
 ## Technology Stack
 
-| Category | Technology | Purpose |
+Legend: ✅ live in production · ⚠️ partial or substituted · ❌ designed, not built
+
+| Category | Technology | Status |
 | :--- | :--- | :--- |
-| **Frontend** | React / Next.js | Accessible, server-rendered UI with WCAG compliance |
-| **Design System** | Custom component library | High-visibility, accessible components built to PULSE spec |
-| **Backend** | Node.js / Express (TypeScript) | API layer for correspondence orchestration |
-| **Database** | PostgreSQL (>= 14) | Per-service schemas for user profiles, correspondence logs |
-| **Cache** | Redis | Rate limiting, session store, service-level caching |
-| **Message Queue** | Apache Kafka | Event-driven processing for multi-channel dispatch |
-| **AI / NLP** | (Configurable) | Language simplification, readability scoring, sentiment analysis |
-| **Voice / IVR** | Twilio / AWS Connect | Voice-assist callbacks, text-to-speech, IVR flows |
-| **Physical Mail** | SingPost API integration | Automated physical mail generation and dispatch |
-| **Authentication** | Singpass / Corppass | National digital identity integration |
-| **Observability** | OpenTelemetry + Prometheus + Grafana | Distributed tracing, metrics, dashboards, alerting |
-| **Error Tracking** | Sentry | Crash reporting and error aggregation |
-| **Feature Flags** | LaunchDarkly / Unleash | Decouple deployment from release; per-tenant rollout |
-| **CI/CD** | GitHub Actions | Automated test → lint → build → deploy pipelines |
-| **Infrastructure** | AWS / Azure (Gov Cloud) | Secure, compliant cloud hosting for government data |
-| **Containerisation** | Docker + Kubernetes | Service isolation, independent scaling, health checks |
+| **Frontend** | Next.js (App Router) + React, TypeScript | ✅ live on :3001 |
+| **Backend** | Node.js 20 / Express (TypeScript, `tsx`) | ✅ live on :3000 |
+| **Knowledge base & queue** | MongoDB Atlas | ✅ live |
+| **Relational store** | SQLite (`better-sqlite3`) | ✅ live — *substitutes the designed PostgreSQL* |
+| **AI / NLP** | z.ai GLM (answers) + Hugging Face (STT, emotion, translation) | ✅ live |
+| **Speech-to-text** | Local Whisper service on :3002 | ✅ live |
+| **Text-to-speech** | `msedge-tts` | ✅ live |
+| **Messaging** | Telegram Bot API · WhatsApp Meta Cloud API | ✅ live |
+| **Edge / TLS** | Caddy (automatic HTTPS) | ✅ live |
+| **Process manager** | pm2 | ✅ live |
+| **Hosting** | Google Cloud Compute Engine | ✅ live — *substitutes the designed AWS/Azure Gov Cloud* |
+| **Validation** | Zod | ✅ live |
+| **Testing** | Vitest (162 tests) + runtime self-test (`npm run post`) | ✅ live |
+| **Logging** | Pino (structured JSON) | ✅ live |
+| **Auth** | JWT middleware built; **Singpass/Corppass not integrated** | ⚠️ partial |
+| **Auto-deploy** | GitHub webhook → frontend build + restart | ⚠️ frontend only |
+| **Cache** | Redis | ❌ not used — in-process caching instead |
+| **Message Queue** | Apache Kafka | ❌ not used |
+| **Voice / IVR** | Twilio / AWS Connect | ❌ not built |
+| **Physical Mail** | SingPost API | ❌ not built |
+| **Observability** | OpenTelemetry + Prometheus + Grafana + Sentry | ❌ Pino logging only |
+| **Feature Flags** | LaunchDarkly / Unleash | ❌ not used |
+| **CI/CD** | GitHub Actions | ❌ not set up |
+| **Containerisation** | Docker + Kubernetes | ❌ single VM + pm2 |
+
+> The ❌ rows are part of the **designed** architecture described earlier in this document. They are
+> listed honestly so the prototype's real footprint is not overstated.
 
 ---
 
@@ -1028,53 +1070,117 @@ Parent receives confirmation via preferred channel
 
 ### Prerequisites
 
-- Node.js >= 18.x
-- PostgreSQL >= 14
-- Redis >= 7.x
+- **Node.js >= 20**
+- npm
+- A **MongoDB** connection string (Atlas or local) — the CPF knowledge base and officer queue
+- An **LLM API key** (z.ai GLM by default)
+
+> No PostgreSQL, Redis or Kafka is required. Relational storage is SQLite, created automatically.
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/project-pulse.git
-cd project-pulse
+git clone https://github.com/OriginalNneo/Project-PULSE.git
+cd Project-PULSE
 
-# Install dependencies
 npm install
+cd frontend && npm install && cd ..
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your local configuration
+cp .env.example .env      # then fill in the keys below
 
-# Ensure PostgreSQL and Redis are running locally
+npm run db:migrate        # create the SQLite schema
+npm run db:seed           # seed CPF demo data
 
-# Run database migrations
-npm run db:migrate
-
-# Seed development data
-npm run db:seed
-
-# Start the development server
-npm run dev
+npm run dev               # backend :3000 + frontend :3001
 ```
 
-### Environment Variables
+Open <http://localhost:3001>. The chatbot lives on the **Text Us** page.
+
+### Environment variables
+
+Only these are needed to run locally — everything else in `.env.example` is optional or reserved
+for designed-but-unbuilt features.
 
 | Variable | Description | Required |
 | :--- | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `REDIS_URL` | Redis connection string | Yes |
-| `KAFKA_BROKERS` | Kafka broker addresses | Yes |
-| `SINGPASS_CLIENT_ID` | Singpass integration client ID | Yes |
-| `SINGPASS_CLIENT_SECRET` | Singpass integration secret | Yes |
-| `TWILIO_ACCOUNT_SID` | Twilio account for voice assist | Yes |
-| `TWILIO_AUTH_TOKEN` | Twilio authentication token | Yes |
-| `SINGPOST_API_KEY` | SingPost mail integration key | Yes |
-| `SESSION_SECRET` | Session encryption secret | Yes |
-| `JWT_PUBLIC_KEY` | RSA public key for JWT verification | Yes |
-| `JWT_PRIVATE_KEY` | RSA private key for JWT signing | Yes |
-| `SENTRY_DSN` | Sentry error tracking endpoint | No |
-| `PORT` | Application port (default: 3000) | No |
+| `LLM_BASE_URL` | LLM endpoint (z.ai GLM by default) | **Yes** |
+| `LLM_API_KEY` | LLM API key | **Yes** |
+| `LLM_MODEL` | Model name | **Yes** |
+| `MONGODB_URI` | MongoDB connection string | **Yes** |
+| `MONGODB_DB` | Database name | **Yes** |
+| `SQLITE_PATH` | SQLite file path (defaults to `data/pulse.db`) | No |
+| `HUGGINGFACE_API_KEY` | STT / emotion / translation side-models | Recommended |
+| `TELEGRAM_BOT_TOKEN` | Telegram channel | Optional |
+| `WHATSAPP_*` | Meta Cloud API channel | Optional |
+| `SESSION_SECRET`, `JWT_*` | Auth | Optional locally |
+
+> [!WARNING]
+> The Telegram bot runs in **webhook mode** in production. Running `npm run dev:telegram` locally
+> deletes the production webhook and silences the live bot. Re-register it with `setWebhook`.
+
+---
+
+## 📦 Deployment
+
+Production runs on Google Cloud. **Backend and frontend deploy by different routes** — using the
+wrong one silently does nothing.
+
+<p align="center">
+  <img src="docs/diagrams/deploy-flow.svg" alt="PULSE deploy decision flow" width="100%">
+</p>
+
+Full instructions, verification steps and rollback: **[DEPLOY.md](./DEPLOY.md)**.
+
+---
+
+## 🧪 Testing
+
+```bash
+npm test          # Vitest — 162 unit tests, no network or DB required
+npm run typecheck # tsc --noEmit (backend + frontend)
+npm run lint      # eslint
+npm run post      # Power-On Self-Test against a running backend
+```
+
+`npm test` is a fast, deterministic regression net over pure functions: triage routing, emotion
+scoring, tone directives, the inbound branch order, the language guard, the CPF scope guard,
+session lifecycle and formatting. See [POST.md](./POST.md) for the runtime self-test.
+
+**Independent evaluation.** The live assistant was benchmarked with
+[AI Verify Moonshot](https://github.com/aiverify-foundation/moonshot) — 2,652 questions across 51
+recipes. Findings, methodology and limitations:
+[`docs/PULSE_Moonshot_Evaluation.md`](./docs/PULSE_Moonshot_Evaluation.md).
+
+---
+
+## 📁 Repository Guide
+
+| Path | What it holds |
+| :--- | :--- |
+| `src/gateway/` | Express entry point, routes, inbound pipeline, webhooks |
+| `src/agents/` | AI agents — query, triage, escalation, emotion, guardian, accessibility |
+| `src/adapters/` | Channel adapters — Telegram, Meta/WhatsApp, web |
+| `src/services/` | Service modules (AI client, session, copilot, …) |
+| `src/data/` | Knowledge repository and search |
+| `src/db/` | SQLite + MongoDB access |
+| `frontend/` | Next.js app — citizen pages, chatbot widget, officer dashboard |
+| `data/` | CPF knowledge base + guiding questions (seed data) |
+| `deploy/` | Caddyfile, pm2 ecosystem config, deploy scripts, STT service |
+| `docs/` | Architecture report, evaluation report, diagrams |
+| `tests/` | Cross-cutting test suites and testing strategy |
+| `scripts/` | Power-On Self-Test |
+
+### Key documents
+
+| Document | Purpose |
+| :--- | :--- |
+| [DEPLOY.md](./DEPLOY.md) | How to deploy, verify and roll back |
+| [CONTEXT.md](./CONTEXT.md) | Full project context and file-by-file map |
+| [AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md) | Multi-agent system design |
+| [AGENTS.md](./AGENTS.md) | Workspace instructions for coding agents |
+| [POST.md](./POST.md) | Power-On Self-Test protocol |
+| [docs/PULSE_Moonshot_Evaluation.md](./docs/PULSE_Moonshot_Evaluation.md) | Independent AI-safety evaluation |
+| [soul.md](./soul.md) | Assistant persona and tone rules |
 
 ---
 

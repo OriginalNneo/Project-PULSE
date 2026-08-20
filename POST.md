@@ -34,3 +34,8 @@ Config is overridable via env: `POST_BACKEND` (`http://127.0.0.1:3000`), `POST_F
 ## Notes
 - A bot **cannot DM itself**; the Telegram functional proof is `getMe` + a confirmed outbound `sendMessage` to `TELEGRAM_OFFICER_CHAT_ID` (set it in `.env` to enable that check).
 - Running POST **restarts the backend** (Phase 1) — expected, it's the "power-on" in power-on self-test.
+- Because it restarts, POST carries the same **crash-loop risk** as any deploy. On the production VM
+  (`pulse-vm`, `/opt/project-pulse`) watch the pm2 `↺` counter afterwards; a climbing count with low
+  uptime means the backend is failing to boot. See [DEPLOY.md](./DEPLOY.md) for rollback.
+- Production logs are `/var/log/pulse/{backend,frontend,stt}.{out,err}.log`; point `POST_ERRLOG` at
+  `backend.err.log` there.

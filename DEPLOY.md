@@ -1,263 +1,155 @@
-# PULSE — Deploy to VPS + Cloudflare subdomain
+# Deploying PULSE
 
-This guide puts PULSE live at **`https://pulse.nathanielbuilds.cc`**, served from your VPS
-(`203.174.82.119`) behind Caddy (automatic HTTPS), with Cloudflare DNS in front.
+> **Production runs on Google Cloud.** If you are looking for the old VPS instructions, that host
+> is now a **rollback target only** — see [Legacy host](#legacy-host-rollback-only) at the bottom.
 
-```
-Browser ──HTTPS──> Cloudflare DNS (pulse.nathanielbuilds.cc)
-                       │
-                       ▼
-                 VPS :443  Caddy (reverse proxy + TLS)
-                       ├── /api/*, /health/*, /query, /webhook/*,      ──> 127.0.0.1:3000  (Express backend, tsx)
-                       │   /dashboard/*, /webchat/* (+ transcribe/…)
-                       └── everything else                             ──> 127.0.0.1:3001  (Next.js frontend)
-                                   │
-                   SQLite (local file) + MongoDB Atlas + z.ai GLM
-```
+<p align="center">
+  <img src="docs/diagrams/deployment-topology.svg" alt="PULSE deployment topology" width="100%">
+</p>
 
-> Pick any subdomain you like — this guide uses `pulse`. To change it, edit
-> [`deploy/Caddyfile`](deploy/Caddyfile) and the DNS record name below.
+## Production at a glance
 
----
+| | |
+| :--- | :--- |
+| **Host** | GCP Compute Engine `pulse-vm`, zone `asia-southeast1-b` |
+| **Public IP** | `34.126.135.42` |
+| **Domain** | `https://pulse.nathanielbuilds.cc` |
+| **Repo path** | `/opt/project-pulse` |
+| **OS / runtime** | Ubuntu 24.04 LTS · Node 20 |
+| **Edge** | Caddy on `:80` / `:443`, automatic TLS |
+| **Processes** | pm2 — `pulse-backend` :3000, `pulse-frontend` :3001, `pulse-stt` :3002 |
+| **Logs** | `/var/log/pulse/{backend,frontend,stt}.{out,err}.log` |
 
-## 0. ⚠️ Security first (do this now)
-
-You shared the VPS root password and your API keys in chat, so treat them as compromised:
-
-- After step 6, **change the VPS root password**: `passwd`
-- After it's running, **rotate** the z.ai API key and the MongoDB Atlas password, update `.env`, then `pm2 reload all`.
-- The deploy ships `.env` (with secrets) to the VPS over scp (encrypted) and locks it to `chmod 600`.
-
----
-
-## 1. Create the Cloudflare subdomain (do this first — Caddy needs it to get a cert)
-
-1. Go to **dash.cloudflare.com → `nathanielbuilds.cc` → DNS → Records → Add record**.
-2. Fill in:
-   - **Type:** `A`
-   - **Name:** `pulse`
-   - **IPv4 address:** `203.174.82.119`
-   - **Proxy status:** **DNS only** (grey cloud) ← required so Caddy can fetch a Let's Encrypt cert
-   - **TTL:** Auto
-3. Save. Confirm it resolves (from your PC):
-   ```powershell
-   nslookup pulse.nathanielbuilds.cc
-   ```
-   It should return `203.174.82.119`.
-
-*(You can switch to the orange "Proxied" cloud later — see step 8.)*
-
----
-
-## 2. Provision the VPS (one time)
-
-**On your Windows PC (PowerShell), from the repo root** `C:\Users\neosp\Project-PULSE`:
-
-```powershell
-# Build a deployable archive. Excludes node_modules/.next/.git/db files,
-# but INCLUDES .env (so your keys go with it).
-tar --exclude=node_modules --exclude=frontend/node_modules --exclude=frontend/.next `
-    --exclude=dist --exclude=.git `
-    --exclude="data/pulse-customers.db" --exclude="data/pulse-customers.db-wal" `
-    --exclude="data/pulse-customers.db-shm" --exclude="data/docstore" `
-    -czf ..\pulse.tar.gz .
-
-# Copy it to the VPS (you'll be prompted for the root password)
-scp ..\pulse.tar.gz root@203.174.82.119:/root/
-```
-
-**SSH into the VPS** (type the password when prompted):
-
-```powershell
-ssh root@203.174.82.119
-```
-
-**On the VPS**, unpack and run the provisioning script (installs Node 20, PM2, Caddy, firewall):
+Shell into the box with:
 
 ```bash
-mkdir -p /opt/project-pulse
-tar -xzf /root/pulse.tar.gz -C /opt/project-pulse
-cd /opt/project-pulse
-chmod 600 .env
-bash deploy/setup-vps.sh
+gcloud compute ssh pulse-vm --zone=asia-southeast1-b
 ```
 
 ---
 
-## 3. Point the app at the production domain
+## Which deploy path?
 
-**On the VPS**, set production env values in `.env`:
+Backend and frontend deploy **differently**. Using the wrong one is the most common mistake.
 
-```bash
-cd /opt/project-pulse
-sed -i 's#^NODE_ENV=.*#NODE_ENV=production#' .env
-grep -q '^CORS_ORIGIN=' .env \
-  && sed -i 's#^CORS_ORIGIN=.*#CORS_ORIGIN=https://pulse.nathanielbuilds.cc#' .env \
-  || echo 'CORS_ORIGIN=https://pulse.nathanielbuilds.cc' >> .env
-```
-
-**MongoDB Atlas allowlist:** in the Atlas dashboard → **Network Access**, add the VPS IP
-`203.174.82.119` (or `0.0.0.0/0` for any). If you skip this, the app still runs — the document
-store **auto-falls back to the local file store** — but it won't write to your Atlas cluster.
+<p align="center">
+  <img src="docs/diagrams/deploy-flow.svg" alt="PULSE deploy decision flow" width="100%">
+</p>
 
 ---
 
-## 4. Install, build, seed
+## Path A — backend (`src/**`)
 
-**On the VPS:**
+Pushing to `main` does **not** deploy the backend. The webhook only touches `frontend/`. Backend
+changes must be applied explicitly.
 
 ```bash
-cd /opt/project-pulse
-npm install --include=dev          # builds the Linux better-sqlite3 binary; keeps tsx
-cd frontend && npm install --include=dev && npm run build && cd ..
-npm run db:seed                    # creates SQLite + 150 members + loads CPF knowledge
+# 1. Land the change on main
+git push origin main
+
+# 2. Apply just the files you changed, then restart
+gcloud compute ssh pulse-vm --zone=asia-southeast1-b --command='
+  cd /opt/project-pulse &&
+  git fetch origin main &&
+  git checkout origin/main -- src/path/to/changed.ts &&
+  pm2 restart pulse-backend'
 ```
 
-> `--include=dev` matters: `tsx` (backend runtime) and the Next build toolchain live in devDependencies.
+**Check out specific files, not `git pull`.** The VM's working tree carries local modifications, and
+a `pull` will either conflict or clobber them.
+
+### Verify before you walk away
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://pulse.nathanielbuilds.cc/health/live   # expect 200
+gcloud compute ssh pulse-vm --zone=asia-southeast1-b --command='pm2 list | grep pulse-backend'
+```
+
+Watch the restart counter (`↺`). One increment is normal. Climbing numbers with a low uptime means
+a **crash loop** — the backend has a history of these on restart, so never deploy and leave.
+
+```bash
+# tail real errors
+gcloud compute ssh pulse-vm --zone=asia-southeast1-b --command='tail -50 /var/log/pulse/backend.err.log'
+```
+
+### Rollback
+
+```bash
+gcloud compute ssh pulse-vm --zone=asia-southeast1-b --command='
+  cd /opt/project-pulse &&
+  git checkout <last-good-sha> -- src/path/to/changed.ts &&
+  pm2 restart pulse-backend'
+```
 
 ---
 
-## 5. Configure Caddy (reverse proxy + HTTPS)
+## Path B — frontend (`frontend/**`)
 
-**On the VPS:**
-
-```bash
-cp /opt/project-pulse/deploy/Caddyfile /etc/caddy/Caddyfile
-systemctl reload caddy
-systemctl status caddy --no-pager | head -n 12
-```
-
-Caddy will automatically obtain a Let's Encrypt certificate for `pulse.nathanielbuilds.cc`
-(this needs step 1 done and the grey cloud). Watch it succeed with:
+Automatic. Pushing to `main` fires a GitHub webhook (`POST /webhook/github`, HMAC-verified) which
+runs `deploy/deploy-frontend.sh` on the VM: fetch → checkout `frontend/` → `npm install` →
+`npm run build` → `pm2 restart pulse-frontend`.
 
 ```bash
-journalctl -u caddy -n 30 --no-pager
+git push origin main    # that's the whole deploy
 ```
+
+> [!WARNING]
+> **The webhook is destructive to local frontend edits.** `deploy-frontend.sh` runs
+> `git checkout origin/main -- frontend/`, which **force-overwrites the entire `frontend/`
+> directory on the VM**, discarding uncommitted work there. If anyone has been editing frontend
+> files directly on the VM, back them up before pushing to `main`:
+> ```bash
+> gcloud compute ssh pulse-vm --zone=asia-southeast1-b --command='
+>   cd /opt/project-pulse && git diff HEAD -- frontend/ > /root/frontend-backup.patch'
+> ```
+
+Only `refs/heads/main` triggers it (`src/gateway/deploy.ts`). Pushing any other branch is safe.
 
 ---
 
-## 6. Start the app with PM2
+## Environment
 
-**On the VPS:**
+Secrets live in `/opt/project-pulse/.env` (mode `600`) and are **not** in git. See `.env.example`
+for the full list. The keys that matter most:
 
-```bash
-mkdir -p /var/log/pulse
-cd /opt/project-pulse
-pm2 start deploy/ecosystem.config.cjs
-pm2 save
-pm2 startup        # prints a command — copy/paste & run it so PM2 restarts on reboot
-pm2 status
-```
+| Variable | Purpose |
+| :--- | :--- |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | z.ai GLM — answer generation |
+| `MONGODB_URI`, `MONGODB_DB` | Atlas — knowledge base + officer queue |
+| `HUGGINGFACE_API_KEY`, `HF_*` | STT, emotion, translation side-models |
+| `WHATSAPP_*` | Meta Cloud API |
+| `SESSION_SECRET`, `JWT_*` | Auth |
 
-Then **change the root password** while you're here:
+After editing `.env`, restart the backend (Path A verification steps still apply).
 
-```bash
-passwd
-```
-
-### 6b. (Alternative) Run with tmux instead of PM2
-
-tmux is simpler and keeps the processes alive after you log out, but it does **not** auto-restart
-on crash or reboot. Good for testing; PM2 (above) is better for unattended uptime. Caddy is
-independent of either. To use tmux, skip the PM2 commands and instead:
-
-```bash
-apt-get install -y tmux
-tmux new -s pulse
-
-# inside tmux:
-cd /opt/project-pulse && npm run start:backend     # backend :3000
-#   split the pane:  Ctrl-b  then  "
-cd /opt/project-pulse && npm run start:frontend    # frontend :3001 (needs `npm run build` first)
-#   detach (leaves it running):  Ctrl-b  then  d
-```
-
-Reattach later with `tmux attach -t pulse`. After a reboot, `tmux attach` (or re-run the two
-commands) — there's no auto-start.
+> [!NOTE]
+> MongoDB Atlas enforces an **IP allowlist**. A new host — or a VM whose external IP changes —
+> must be added in Atlas or every knowledge lookup fails.
 
 ---
 
-## 7. Verify
+## Troubleshooting
 
-**On the VPS (local checks):**
-
-```bash
-curl -s http://127.0.0.1:3000/health/live
-curl -s http://127.0.0.1:3000/api/v1/console/stats | head -c 300
-```
-
-**From anywhere (the real thing):**
-
-- App / console: **https://pulse.nathanielbuilds.cc/console**
-- API: **https://pulse.nathanielbuilds.cc/api/v1/console/stats**
-
-You should see the dashboard with ~150 members and the AI copilot working.
+| Symptom | Cause / fix |
+| :--- | :--- |
+| `/health` returns 404 | Wrong path. The route is **`/health/live`**. |
+| Backend restart count climbing | Crash loop. Read `/var/log/pulse/backend.err.log`, then roll back. |
+| Frontend changes not live | Did the webhook fire? Check `backend.out.log` for `deploy-frontend`. |
+| Backend changes not live | Expected — Path B does not deploy backend. Use Path A. |
+| Knowledge answers empty | Atlas IP allowlist, or `MONGODB_URI` wrong. |
+| Telegram bot silent | Bot is **webhook-mode**. Running a local poller deletes the prod webhook; re-set it via `setWebhook`. |
 
 ---
 
-## 8. (Optional) Put Cloudflare's proxy in front
+## Legacy host (rollback only)
 
-Once HTTPS works with the grey cloud, you can enable the **orange "Proxied"** cloud for DDoS
-protection and to hide your origin IP. Because Cloudflare then intercepts port 80 (breaking
-Let's Encrypt's HTTP renewal), switch Caddy to a **Cloudflare Origin Certificate**:
+`203.174.82.119` was the original VPS. Its PULSE processes are **stopped** and it is kept as a
+rollback target.
 
-1. Cloudflare → **SSL/TLS → Overview** → set encryption mode to **Full (strict)**.
-2. **SSL/TLS → Origin Server → Create Certificate** → save the cert and key on the VPS:
-   ```bash
-   nano /etc/caddy/origin.pem   # paste the certificate
-   nano /etc/caddy/origin.key   # paste the private key
-   chmod 600 /etc/caddy/origin.key
-   ```
-3. In `/etc/caddy/Caddyfile`, add this line just inside the `pulse.nathanielbuilds.cc { ... }` block:
-   ```
-   tls /etc/caddy/origin.pem /etc/caddy/origin.key
-   ```
-4. `systemctl reload caddy`
-5. In Cloudflare DNS, flip the `pulse` record to **Proxied** (orange).
+> [!IMPORTANT]
+> **Do not decommission it.** It still serves the separate **ORIION** project over a Cloudflare
+> Tunnel. Stopping that box takes ORIION offline.
 
----
-
-## 9. Redeploy after code changes
-
-**On your PC** (rebuild + ship the archive):
-
-```powershell
-tar --exclude=node_modules --exclude=frontend/node_modules --exclude=frontend/.next `
-    --exclude=dist --exclude=.git --exclude="data/pulse-customers.db*" --exclude="data/docstore" `
-    -czf ..\pulse.tar.gz .
-scp ..\pulse.tar.gz root@203.174.82.119:/root/
-```
-
-**On the VPS:**
-
-```bash
-tar -xzf /root/pulse.tar.gz -C /opt/project-pulse
-cd /opt/project-pulse
-npm install --include=dev
-cd frontend && npm install --include=dev && npm run build && cd ..
-pm2 reload all
-```
-
-*(Skip `npm run db:seed` on redeploys unless you want to reset the data.)*
-
----
-
-## 10. Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| Caddy won't get a cert | DNS A record must resolve to the VPS and be **grey cloud**; port 80 open. `journalctl -u caddy -n 50`. |
-| `502 Bad Gateway` | Backend/frontend not up. `pm2 status`, `pm2 logs pulse-backend`. |
-| Atlas not connecting | Add the VPS IP to Atlas **Network Access** (else it uses the file fallback). |
-| `better-sqlite3` build error | Ensure `build-essential` + `python3` (setup script installs them), then `npm install --include=dev` again. |
-| Copilot returns fallback answers | Confirm `LLM_API_KEY` in `.env` and `pm2 reload all`. |
-| Ports busy | `ss -ltnp | grep -E ':3000|:3001'` — only PM2's node should hold them. |
-
-## Useful commands
-
-```bash
-pm2 status            # process health
-pm2 logs              # live logs (Ctrl+C to exit)
-pm2 reload all        # zero-downtime restart after a deploy
-systemctl reload caddy
-```
+Its historical setup — Caddy config, `setup-vps.sh`, tarball/scp bootstrap — remains in `deploy/`
+for reference. Do not follow it for a normal deploy.

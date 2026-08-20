@@ -17,15 +17,28 @@
 
 ---
 
+## Where PULSE actually runs (authoritative)
+
+> Production is the **GCP VM `pulse-vm`** (`34.126.135.42`, zone `asia-southeast1-b`), repo path
+> **`/opt/project-pulse`**, fronted by Caddy on :80/:443 for `pulse.nathanielbuilds.cc`.
+> pm2 runs `pulse-backend` :3000, `pulse-frontend` :3001, `pulse-stt` :3002.
+> Logs are `/var/log/pulse/{backend,frontend,stt}.{out,err}.log`.
+>
+> The original VPS `203.174.82.119` is a **rollback target only** — its PULSE processes are
+> stopped. Do not decommission it: it still serves the separate ORIION project.
+>
+> Backend and frontend deploy by **different** routes. See [`DEPLOY.md`](./DEPLOY.md).
+> Historical "Recent changes" entries below are kept as a changelog and may describe the old host.
+
 ## Recent changes (2026-07-09–10 — WhatsApp Meta API + auto-deploy)
 
 - **Meta WhatsApp Cloud API integration.** `src/gateway/webhook.ts` rewritten from Twilio (form-encoded, HMAC-SHA1) to Meta Cloud API (JSON, HMAC-SHA256 `X-Hub-Signature-256`). New adapter `src/adapters/meta/client.ts` handles outbound messages via Graph API (`/{phone_number_id}/messages`) with `appsecret_proof`. GET `/webhook/whatsapp` handles the Meta hub-challenge verification handshake. Env vars: `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`.
-- **GitHub webhook auto-deploy wired.** `POST /webhook/github` handler (`src/gateway/deploy.ts`) was already built; the GitHub webhook was not registered. Webhook created on `OriginalNneo/Project-PULSE` pointing at `https://pulse.nathanielbuilds.cc/webhook/github` — pushes to `UI_Frontend` now auto-deploy. `deploy/deploy-frontend.sh` updated to run `npm run build` before `pm2 restart` (previously omitted, causing 502 on deploy).
-- **Live system clarification.** Both pm2 processes (`pulse-backend` :3000, `pulse-frontend` :3001) run from `/nat/Project-PULSE`. `/opt/project-pulse` exists on disk but is **not used**.
+- **GitHub webhook auto-deploy wired.** `POST /webhook/github` handler (`src/gateway/deploy.ts`) was already built; the GitHub webhook was not registered. Webhook created on `OriginalNneo/Project-PULSE` pointing at `https://pulse.nathanielbuilds.cc/webhook/github` — pushes to `main` now auto-deploy the frontend (`TARGET_REF = refs/heads/main` in `src/gateway/deploy.ts`). `deploy/deploy-frontend.sh` updated to run `npm run build` before `pm2 restart` (previously omitted, causing 502 on deploy).
+- **Live system clarification.** _(Superseded — see the note below.)_ At the time of writing both pm2 processes ran from `/nat/Project-PULSE` on the original VPS.
 
 ## Recent changes (2026-06-26 — self-test / refactor pass 1)
 
-Full scorecard + hierarchical test plan: [`tests/SELF_TEST_REPORT.md`](./tests/SELF_TEST_REPORT.md). Added a runnable unit suite (`npm test` → **79/79 green**, 0 type errors).
+Full scorecard + hierarchical test plan: [`docs/SELF_TEST_REPORT_2026-06.md`](./docs/SELF_TEST_REPORT_2026-06.md). Added a runnable unit suite (`npm test` → **79/79 green**, 0 type errors).
 
 - **Bugs fixed:** B1 emotion-label gating (a happy message no longer scores as "rage" → false escalation), B2 typed escalation now carries full history/emotion via `escalateUser`, B3 whole-word `"yes"` match, B4 officer "Resolve" now sends a CSAT prompt, B5 escalation offer text preserved on no-button channels, B6 translation defaults to GLM (skips the dead SeamlessM4T HF call), B7+B8 (see report).
 - **Dead code removed:** `services/proxy/` db-proxy microservice (mounted stub `proxy/routes.ts` kept), the unused `/api/v1/officer/*` REST surface (unmounted), `config/integration.ts`, and the unused `pg`/`ioredis`/`kafkajs` deps. _Note:_ the Tech-Stack section's PostgreSQL/Redis/Kafka are aspirational; live persistence is SQLite + MongoDB only.
@@ -509,8 +522,8 @@ The "Open Integrated ChatBot" node from the system diagram, built as three swapp
 
 | Subsystem | Interface | Active now | Swap to | Flag |
 | :--- | :--- | :--- | :--- | :--- |
-| **AI provider** | `AiProvider` (`src/services/ai/providers/`) | **z.ai GLM** (real, MongoDB-grounded) | **Hermes.AI** (placeholder until VPS endpoint wired) | `AI_PROVIDER=zai\|hermes` |
-| **Messaging channel** | `MessagingChannel` (`src/services/messaging/`) | **Telegram** (real, long-polling) | **WhatsApp** (Meta Cloud API — live, webhook at `/webhook/whatsapp`) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
+| **AI provider** | `AiProvider` (live entry point: `src/services/ai/llmClient.ts`) | **z.ai GLM** (real, MongoDB-grounded) | **Hermes.AI** (placeholder until VPS endpoint wired) | `AI_PROVIDER=zai\|hermes` |
+| **Messaging channel** | `MessagingChannel` (live adapters: `src/adapters/{telegram,meta,web}/`) | **Telegram** (real, long-polling) | **WhatsApp** (Meta Cloud API — live, webhook at `/webhook/whatsapp`) | `MESSAGING_CHANNEL=telegram\|whatsapp` |
 
 Config is read from `.env` (via `dotenv`) directly by each module — the old central `src/config/integration.ts` loader was removed in the 2026-06-26 cleanup.
 
