@@ -202,10 +202,28 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Knowled
  */
 let lexiconCache: Set<string> | null = null;
 
+/**
+ * Core CPF vocabulary that is true regardless of what the knowledge base currently holds.
+ *
+ * The lexicon is otherwise derived from stored documents, which makes it only as complete as the
+ * seeded content. Production proved why that is not enough: "Can you explain what MediFund is?"
+ * scored topScore 0 / coverage 0 because the MediFund document is present in
+ * data/cpf-knowledge.json but missing from the live store, so the guard refused a legitimate CPF
+ * question as off-topic. A stale or partially-seeded store must never shrink the assistant's sense
+ * of its own domain — that turns a data problem into a wrong answer shown to a citizen.
+ */
+const STATIC_CPF_TERMS = [
+  "cpf", "medisave", "medifund", "medishield", "careshield", "eldershield",
+  "ordinary", "special", "retirement", "nomination", "payout", "payouts",
+  "contribution", "contributions", "provident", "cpflife", "silver", "workfare",
+  "matched", "topup", "top", "housing", "hdb", "withdrawal", "withdraw",
+  "brs", "frs", "ers", "oa", "sa", "ma", "ra",
+];
+
 export async function mentionsKnownCpfTerm(query: string): Promise<boolean> {
   if (!lexiconCache) {
     const [docs, terms] = await Promise.all([listDocuments(), listTerminology()]);
-    const lex = new Set<string>(["cpf"]);
+    const lex = new Set<string>(STATIC_CPF_TERMS);
     for (const d of docs) {
       for (const t of tokenize(`${d.title} ${d.topic} ${(d.audienceTags ?? []).join(" ")}`)) lex.add(t);
     }
@@ -213,7 +231,10 @@ export async function mentionsKnownCpfTerm(query: string): Promise<boolean> {
       for (const tok of tokenize(t.term)) lex.add(tok);
     }
     for (const alias of Object.keys(ALIASES)) lex.add(alias);
-    lexiconCache = lex;
+    // Only cache once the store actually returned content. Caching a lexicon built during an
+    // Atlas outage would pin the degraded version for the life of the process.
+    if (docs.length > 0 || terms.length > 0) lexiconCache = lex;
+    else return tokenize(query).some((t) => lex.has(t));
   }
   return tokenize(query).some((t) => lexiconCache!.has(t));
 }

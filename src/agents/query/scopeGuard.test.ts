@@ -68,3 +68,17 @@ describe("isOutOfScope — CPF vocabulary overrides weak retrieval", () => {
     expect(isOutOfScope({ topScore: 2, coverage: 0.2 })).toBe(true);
   });
 });
+
+// The static-vocabulary floor is exercised through the repository lexicon; these cases lock in
+// the guard contract it feeds, so a stale knowledge store cannot silently start refusing CPF work.
+describe("isOutOfScope — stale knowledge store must not shrink the domain", () => {
+  it("keeps a CPF question even when retrieval returned absolutely nothing", () => {
+    // Production case: "Can you explain what MediFund is?" logged topScore 0, coverage 0 because
+    // the document was missing from the live store. It is still a CPF question.
+    expect(isOutOfScope({ topScore: 0, coverage: 0 }, true)).toBe(false);
+  });
+
+  it("still refuses a genuine non-CPF question when retrieval returns nothing", () => {
+    expect(isOutOfScope({ topScore: 0, coverage: 0 }, false)).toBe(true);
+  });
+});
