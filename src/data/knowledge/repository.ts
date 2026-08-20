@@ -182,6 +182,15 @@ export async function searchKnowledge(query: string, limit = 5): Promise<Knowled
     .slice(0, limit);
 }
 
+/**
+ * How many meaningful (non-stopword) tokens the question contains, pre-alias-expansion.
+ * The scope guard divides matchedTerms by this to get coverage — the share of what the
+ * citizen actually asked about that the knowledge base can speak to.
+ */
+export function countQueryTokens(query: string): number {
+  return tokenize(query).length;
+}
+
 export async function searchTerminology(query: string, limit = 4): Promise<CpfTerm[]> {
   const terms = await listTerminology();
   const tokens = expand(tokenize(query));

@@ -1,6 +1,7 @@
 import type { Language, VulnerabilityTier } from "../../shared/types/index.js";
 import { getCpfPage, getCpfLinks, getCpfKnowledge } from "../../db/proxy-client.js";
-import { searchTerminology } from "../../data/knowledge/repository.js";
+import { searchTerminology, countQueryTokens } from "../../data/knowledge/repository.js";
+import type { ScopeSignal } from "./scopeGuard.js";
 import { validateOutput } from "../guardian/agent.js";
 import { formatForTTS } from "../accessibility/agent.js";
 import type { QueryToolName } from "./routes.js";
@@ -20,6 +21,12 @@ export interface QueryPipelineState {
   blocked: boolean;
   blockReason?: string;
   isPersonalDataRequest: boolean;
+  /**
+   * Deterministic evidence of how well retrieval actually covered the question. Consumed by
+   * the scope guard before generation — see scopeGuard.ts. Undefined when the pipeline took a
+   * path that does no knowledge search.
+   */
+  relevance?: ScopeSignal;
 }
 
 const CPF_HOTLINE_REDIRECT =
@@ -102,11 +109,26 @@ export const queryRegistry: Record<QueryToolName, QueryToolFn> = {
       parts.push(`Key terms:\n${terms.map((t) => `• ${t.term}: ${t.plainEnglish}`).join("\n")}`);
     }
 
+    // Relevance evidence for the scope guard. `confidence` above is effectively binary
+    // ("did retrieval return any rows"), which is why it could not catch out-of-scope
+    // questions: searchKnowledge keeps anything scoring > 0, so one incidental token match
+    // looked identical to a real topical hit. Coverage — the share of the citizen's own
+    // tokens the best document matched — separates the two.
+    const best = knowledge?.[0];
+    const askedTokens = countQueryTokens(ctx.query);
+    const relevance: ScopeSignal = {
+      topScore: best?.score ?? 0,
+      coverage: best && askedTokens > 0
+        ? Math.min(1, (best.matched_terms?.length ?? 0) / askedTokens)
+        : 0,
+    };
+
     return {
       ...state,
       retrievedContent: parts.length > 0 ? parts.join("\n\n") : "Please visit cpf.gov.sg for service details.",
       navigationUrl: links?.[0]?.url,
       confidence: parts.length > 0 ? 0.9 : 0.3,
+      relevance,
     };
   },
 
